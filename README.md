@@ -99,9 +99,9 @@ const colours = await shader.shade([
 
 ```ts
 interface NeuralShaderConfig {
-  inputFeatures?: number;        // default 9
+  inputFeatures?: number;        // default 9, must be >= 9
   hiddenSize?: number;           // default 64
-  hiddenLayers?: number;         // default 3
+  hiddenLayers?: number;         // default 3, may be 0 for direct input→RGB
   hiddenActivation?: "relu" | "sigmoid" | "tanh";  // default "relu"
 }
 ```
