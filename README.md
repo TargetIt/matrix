@@ -106,10 +106,20 @@ interface NeuralShaderConfig {
 }
 ```
 
+## Run Locally
+
+```bash
+npm install
+npm run dev     # start dev server, then open http://localhost:5173
+```
+
+Open the printed URL in a browser to see an interactive demo of matrix operations and neural shading.
+
 ## Development
 
 ```bash
 npm install
+npm run dev     # start dev server with live reload (opens index.html)
 npm run build   # compile TypeScript → dist/
 npm test        # run vitest test suite
 npm run lint    # type-check only (tsc --noEmit)
