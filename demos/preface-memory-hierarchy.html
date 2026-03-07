@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>前言演示：GPU 内存层级与复用</title>
+  <style>
+    :root {
+      --bg: #06111c;
+      --panel: #102033;
+      --border: rgba(255,255,255,0.08);
+      --text: #edf6ff;
+      --muted: #8ea5bf;
+      --green: #7dff7c;
+      --cyan: #57d6ff;
+      --orange: #ffbe55;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", Inter, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+      background: radial-gradient(circle at top, rgba(125,255,124,0.1), transparent 28%), linear-gradient(180deg, #06111c, #091522 60%, #050b14);
+      color: var(--text);
+    }
+    .page { width: min(1200px, calc(100vw - 24px)); margin: 0 auto; padding: 24px 0 40px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(19,38,61,0.96), rgba(10,22,36,0.98));
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.28);
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(1.9rem, 3vw, 2.8rem); }
+    p { color: var(--muted); line-height: 1.65; }
+    .grid { display: grid; grid-template-columns: 1.35fr 0.95fr; gap: 18px; }
+    .controls { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; }
+    input[type="range"] { width: 100%; accent-color: var(--green); }
+    button {
+      background: rgba(125,255,124,0.12);
+      border: 1px solid rgba(125,255,124,0.3);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    canvas { width: 100%; height: 480px; display: block; border-radius: 18px; background: rgba(255,255,255,0.02); }
+    .metrics, .cards { display: grid; gap: 12px; }
+    .cards { grid-template-columns: repeat(3, 1fr); margin-top: 16px; }
+    .card {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.03);
+      transition: transform 180ms ease, border-color 180ms ease;
+    }
+    .card.active { transform: translateY(-2px); border-color: rgba(125,255,124,0.35); }
+    .card h3 { margin: 0 0 6px; }
+    .card small { display: block; color: var(--muted); }
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .metric {
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .metric b { display: block; color: var(--green); font-size: 1.5rem; }
+    .tip {
+      border-left: 4px solid var(--green);
+      border-radius: 14px;
+      background: rgba(125,255,124,0.08);
+      padding: 14px 16px;
+      color: var(--text);
+      margin-top: 14px;
+    }
+    @media (max-width: 920px) {
+      .grid, .controls, .cards, .metric-row { grid-template-columns: 1fr; }
+      canvas { height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <h1>前言演示：GMEM → SMEM → Registers</h1>
+      <p>拖动 <strong>Tile Reuse</strong>，观察同一批数据被复用得越多时，GMEM 平摊到每次 FMA 的字节数如何下降。将鼠标悬停在下方卡片上，还会高亮对应层级的数据流。</p>
+      <div class="controls">
+        <label>
+          <div>Tile Reuse（同一批 A/B 数据在片上被重复消费的次数）: <strong id="reuseValue">4×</strong></div>
+          <input id="reuse" type="range" min="1" max="16" value="4">
+        </label>
+        <button id="playBtn">暂停动画</button>
+        <button id="resetBtn">重置粒子</button>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <canvas id="canvas" width="760" height="480"></canvas>
+        <div class="cards">
+          <div class="card" data-level="gmem">
+            <h3>GMEM</h3>
+            <small>容量大 / 延迟高 / 适合存放完整矩阵</small>
+          </div>
+          <div class="card" data-level="smem">
+            <h3>SMEM</h3>
+            <small>线程块共享缓存 / 适合 block tile</small>
+          </div>
+          <div class="card" data-level="regs">
+            <h3>Registers</h3>
+            <small>线程私有、最快 / 适合累加器与 thread tile</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel metrics">
+        <div class="metric-row">
+          <div class="metric"><span>估算 GMEM 字节 / FMA</span><b id="bytesPerFma">2.00 B</b></div>
+          <div class="metric"><span>有效复用倍数</span><b id="reuseMetric">4×</b></div>
+          <div class="metric"><span>算术强度（示意）</span><b id="intensityMetric">0.50</b></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span>GMEM 压力</span><b id="gmemPressure">高</b></div>
+          <div class="metric"><span>SMEM 利用</span><b id="smemPressure">中</b></div>
+          <div class="metric"><span>Register 重用</span><b id="regPressure">中</b></div>
+        </div>
+        <div class="tip" id="insight">
+          当 reuse 很低时，你几乎每做几次 FMA 就要重新回到 GMEM 取数据；当 reuse 提高后，GMEM 读取被更多片上消费摊薄，吞吐才有机会逼近计算峰值。
+        </div>
+        <p>建议观察：绿色粒子代表 A/B tile 数据，青色粒子代表被推进到 SMEM 后的共享数据，橙色粒子代表进入寄存器后的私有片段。reuse 越高，粒子越会在右侧层级停留更久、被复用更多次。</p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const reuse = document.getElementById('reuse');
+    const reuseValue = document.getElementById('reuseValue');
+    const bytesPerFma = document.getElementById('bytesPerFma');
+    const reuseMetric = document.getElementById('reuseMetric');
+    const intensityMetric = document.getElementById('intensityMetric');
+    const gmemPressure = document.getElementById('gmemPressure');
+    const smemPressure = document.getElementById('smemPressure');
+    const regPressure = document.getElementById('regPressure');
+    const insight = document.getElementById('insight');
+    const cards = [...document.querySelectorAll('.card')];
+    const playBtn = document.getElementById('playBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const levels = {
+      gmem: { x: 70, y: 120, w: 170, h: 240, color: '#7dff7c' },
+      smem: { x: 300, y: 145, w: 160, h: 190, color: '#57d6ff' },
+      regs: { x: 540, y: 170, w: 150, h: 140, color: '#ffbe55' }
+    };
+
+    let activeLevel = null;
+    let animating = true;
+    let particles = [];
+    let frame = 0;
+
+    function createParticle(from, to, color, delay, localLoop = false) {
+      return {
+        from, to, color, delay, localLoop,
+        t: Math.random(),
+        speed: localLoop ? 0.004 + Math.random() * 0.003 : 0.0025 + Math.random() * 0.002,
+        yJitter: (Math.random() - 0.5) * 34,
+        size: 4 + Math.random() * 3,
+        alpha: 0.5 + Math.random() * 0.4,
+        reset() { this.t = -this.delay; }
+      };
+    }
+
+    function makeParticles() {
+      particles = [];
+      const reuseFactor = Number(reuse.value);
+      for (let i = 0; i < 14; i++) particles.push(createParticle('gmem', 'smem', '#7dff7c', i * 0.08));
+      for (let i = 0; i < Math.min(26, 8 + reuseFactor); i++) particles.push(createParticle('smem', 'regs', '#57d6ff', i * 0.06));
+      for (let i = 0; i < Math.min(34, 12 + reuseFactor * 2); i++) particles.push(createParticle('regs', 'regs', '#ffbe55', i * 0.04, true));
+    }
+
+    function updateMetrics() {
+      const r = Number(reuse.value);
+      const bytes = (8 / r).toFixed(2);
+      const intensity = (r / 8).toFixed(2);
+      reuseValue.textContent = `${r}×`;
+      bytesPerFma.textContent = `${bytes} B`;
+      reuseMetric.textContent = `${r}×`;
+      intensityMetric.textContent = intensity;
+      gmemPressure.textContent = r < 4 ? '极高' : r < 9 ? '中' : '低';
+      smemPressure.textContent = r < 4 ? '低' : r < 9 ? '高' : '很高';
+      regPressure.textContent = r < 4 ? '低' : r < 9 ? '中' : '高';
+      insight.textContent = r < 4
+        ? '当前 reuse 很低：大部分乘加都在等待从 GMEM 重复取数，GPU 还没来得及发挥乘法器吞吐。'
+        : r < 9
+          ? '现在你已经开始“把数据留在片上”：同一 tile 先进入 SMEM，再被多个线程重复消费，GMEM 压力明显下降。'
+          : '高 reuse 状态下，GMEM 更像是“批量补货”，真正密集的计算发生在 SMEM 与寄存器之间，这就是高性能 SGEMM 的核心味道。';
+      makeParticles();
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawBox(box, label, subtitle, active) {
+      ctx.save();
+      ctx.shadowColor = active ? box.color : 'transparent';
+      ctx.shadowBlur = active ? 18 : 0;
+      ctx.fillStyle = active ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.025)';
+      ctx.strokeStyle = active ? box.color : 'rgba(255,255,255,0.14)';
+      ctx.lineWidth = active ? 2.6 : 1.2;
+      roundRect(box.x, box.y, box.w, box.h, 18);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#edf6ff';
+      ctx.font = '700 22px Inter, sans-serif';
+      ctx.fillText(label, box.x + 18, box.y + 34);
+      ctx.fillStyle = '#8ea5bf';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText(subtitle, box.x + 18, box.y + 58);
+      ctx.restore();
+    }
+
+    function drawFlowArrow(from, to, label, active) {
+      const a = levels[from];
+      const b = levels[to];
+      const x1 = a.x + a.w;
+      const y1 = a.y + a.h / 2;
+      const x2 = b.x;
+      const y2 = b.y + b.h / 2;
+      ctx.save();
+      ctx.strokeStyle = active ? 'rgba(125,255,124,0.65)' : 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = active ? 3 : 1.4;
+      ctx.setLineDash(active ? [] : [10, 7]);
+      ctx.beginPath();
+      ctx.moveTo(x1 + 8, y1);
+      ctx.lineTo(x2 - 16, y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = active ? '#edf6ff' : '#8ea5bf';
+      ctx.font = '13px Inter, sans-serif';
+      ctx.fillText(label, (x1 + x2) / 2 - 24, y1 - 18);
+      ctx.beginPath();
+      ctx.moveTo(x2 - 16, y2);
+      ctx.lineTo(x2 - 28, y2 - 7);
+      ctx.lineTo(x2 - 28, y2 + 7);
+      ctx.closePath();
+      ctx.fillStyle = active ? 'rgba(125,255,124,0.75)' : 'rgba(255,255,255,0.16)';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function easeInOut(t) {
+      return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    function drawParticles() {
+      const r = Number(reuse.value);
+      particles.forEach((p) => {
+        if (animating) {
+          p.t += p.speed * (p.localLoop ? 0.8 + r / 8 : 1.1);
+          if (p.t > 1.15) p.reset();
+        }
+        if (p.t < 0) return;
+
+        const from = levels[p.from];
+        const to = levels[p.to];
+        let x, y;
+        if (p.localLoop) {
+          const cx = to.x + to.w / 2;
+          const cy = to.y + to.h / 2;
+          x = cx + Math.cos((p.t + frame * 0.002) * Math.PI * 2) * (42 + r * 2);
+          y = cy + Math.sin((p.t + frame * 0.002) * Math.PI * 2) * (22 + r);
+        } else {
+          const eased = easeInOut(p.t);
+          x = from.x + from.w / 2 + (to.x + to.w / 2 - (from.x + from.w / 2)) * eased;
+          y = from.y + from.h / 2 + (to.y + to.h / 2 - (from.y + from.h / 2)) * eased + p.yJitter * (1 - Math.abs(0.5 - eased) * 2);
+        }
+
+        const show = !activeLevel || activeLevel === p.from || activeLevel === p.to;
+        ctx.save();
+        ctx.globalAlpha = show ? p.alpha : 0.08;
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = show ? 14 : 0;
+        ctx.beginPath();
+        ctx.arc(x, y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function drawUsageBars() {
+      const r = Number(reuse.value);
+      const stats = [
+        { label: 'GMEM 带宽压力', value: Math.max(18, 100 - r * 5), color: '#7dff7c', x: 78, y: 382 },
+        { label: 'SMEM 复用贡献', value: Math.min(92, 18 + r * 4), color: '#57d6ff', x: 308, y: 382 },
+        { label: '寄存器驻留度', value: Math.min(96, 28 + r * 4), color: '#ffbe55', x: 548, y: 382 }
+      ];
+
+      stats.forEach((item) => {
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        roundRect(item.x, item.y, 130, 12, 999);
+        ctx.fill();
+        ctx.fillStyle = item.color;
+        roundRect(item.x, item.y, 130 * item.value / 100, 12, 999);
+        ctx.fill();
+        ctx.fillStyle = '#8ea5bf';
+        ctx.font = '13px Inter, sans-serif';
+        ctx.fillText(item.label, item.x, item.y + 28);
+      });
+    }
+
+    function render() {
+      frame += 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBox(levels.gmem, 'GMEM', '大容量 · 高延迟 · 原始矩阵', activeLevel === 'gmem');
+      drawBox(levels.smem, 'SMEM', '片上共享 · Block Tile', activeLevel === 'smem');
+      drawBox(levels.regs, 'Registers', '线程私有 · 累加器', activeLevel === 'regs');
+      drawFlowArrow('gmem', 'smem', '批量搬入 tile', !activeLevel || activeLevel === 'gmem' || activeLevel === 'smem');
+      drawFlowArrow('smem', 'regs', 'warp / thread 消费', !activeLevel || activeLevel === 'smem' || activeLevel === 'regs');
+      drawParticles();
+      drawUsageBars();
+      ctx.fillStyle = '#8ea5bf';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText('拖动 Tile Reuse 后，观察粒子如何更长时间停留在 SMEM / Registers 侧，而不是频繁回到 GMEM 补货。', 42, 34);
+      requestAnimationFrame(render);
+    }
+
+    cards.forEach((card) => {
+      card.addEventListener('mouseenter', () => {
+        activeLevel = card.dataset.level;
+        cards.forEach((node) => node.classList.toggle('active', node === card));
+      });
+      card.addEventListener('mouseleave', () => {
+        activeLevel = null;
+        cards.forEach((node) => node.classList.remove('active'));
+      });
+    });
+
+    reuse.addEventListener('input', updateMetrics);
+    playBtn.addEventListener('click', () => {
+      animating = !animating;
+      playBtn.textContent = animating ? '暂停动画' : '继续动画';
+    });
+    resetBtn.addEventListener('click', makeParticles);
+
+    updateMetrics();
+    render();
+  </script>
+</body>
+</html>
