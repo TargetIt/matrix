@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CUDA矩阵乘法(SGEMM)终极优化：交互式可视化教程</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0f1b2d;
+      --panel-2: #13253b;
+      --text: #e9f3ff;
+      --muted: #97abc5;
+      --green: #76ff7a;
+      --green-2: #2ec96b;
+      --cyan: #55d6ff;
+      --orange: #ffb454;
+      --red: #ff6b7a;
+      --border: rgba(255,255,255,0.08);
+      --shadow: 0 18px 50px rgba(0,0,0,0.28);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", Inter, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(118,255,122,0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(85,214,255,0.08), transparent 30%),
+        linear-gradient(180deg, #07111f 0%, #081420 55%, #050d18 100%);
+      line-height: 1.7;
+    }
+
+    a { color: var(--green); }
+    .page {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 32px 0 80px;
+    }
+
+    .hero, .section, .demo-card, .chart-card, .outline-card {
+      background: linear-gradient(180deg, rgba(19,37,59,0.92), rgba(11,22,36,0.96));
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: 24px;
+    }
+
+    .hero {
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .hero h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.12;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(118,255,122,0.12);
+      color: var(--green);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      margin-bottom: 18px;
+    }
+
+    .hero p, .section p, li { color: var(--muted); }
+    .hero strong, .section strong { color: var(--text); }
+
+    .reference-list {
+      margin: 20px 0 0;
+      padding-left: 18px;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 16px;
+    }
+
+    .outline-card, .chart-card {
+      padding: 18px 20px;
+    }
+
+    .mini-title {
+      font-size: 0.92rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin: 0 0 10px;
+      font-weight: 700;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .metric b { display: block; font-size: 1.3rem; color: var(--green); }
+    .metric span { font-size: 0.86rem; color: var(--muted); }
+
+    .bars { display: grid; gap: 12px; }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 170px 1fr 64px;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.95rem;
+    }
+
+    .bar-track {
+      height: 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--green-2), var(--green));
+      transition: width 900ms cubic-bezier(.2,.9,.2,1);
+    }
+
+    .section {
+      margin-top: 28px;
+      padding: 28px;
+    }
+
+    .section h2 {
+      margin: 0 0 14px;
+      font-size: clamp(1.6rem, 3vw, 2.3rem);
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.9fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 14px 16px;
+      background: rgba(118,255,122,0.08);
+      border-radius: 14px;
+      margin: 18px 0;
+      color: var(--text);
+    }
+
+    .outline-steps {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .step-card {
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .step-card.active { border-color: rgba(118,255,122,0.45); box-shadow: inset 0 0 0 1px rgba(118,255,122,0.18); }
+    .step-card small { color: var(--cyan); display: block; margin-bottom: 4px; }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin-top: 20px;
+    }
+
+    .demo-card {
+      padding: 20px;
+    }
+
+    .demo-card h3 { margin-top: 0; }
+
+    .demo-card .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      border: 1px solid rgba(118,255,122,0.25);
+      background: rgba(118,255,122,0.12);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.06);
+      padding: 16px;
+      border-radius: 18px;
+      overflow: auto;
+      color: #dce9fb;
+      font-size: 0.95rem;
+    }
+
+    .tip-list {
+      padding-left: 18px;
+      margin: 12px 0 0;
+    }
+
+    @media (max-width: 920px) {
+      .hero, .section-grid { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .bar-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div>
+        <div class="badge">Interactive SGEMM Tutorial</div>
+        <h1>CUDA矩阵乘法(SGEMM)终极优化：从入门到接近 cuBLAS 的交互式可视化教程</h1>
+        <p>
+          本页先交付教程的<strong>完整大纲</strong>，以及<strong>前言、步骤 1、步骤 2</strong>的详细讲解，并给出每一部分对应的
+          <strong>独立、单文件、可直接双击运行</strong>的 HTML 交互演示。整体叙事吸收了
+          <strong>Simon Böhm 的 CUDA MMM 分阶段优化方法</strong>、
+          <strong>wangzyon 的 SGEMM 实践工程化经验</strong>，以及
+          <strong>NVIDIA CUTLASS 的分层 Tile 抽象</strong>。
+        </p>
+        <p>
+          当前轮次的目标不是一次性冲刺到 CUTLASS 的最终形态，而是先把读者带过一条最重要的认知主线：
+          <strong>性能提升，本质上是把数据从 GMEM 一层层“推近”到 SMEM、再推近到寄存器，同时让线程访问模式越来越规则。</strong>
+        </p>
+        <ul class="reference-list">
+          <li>Simon Böhm: 用一系列逐步优化的 CUDA kernel，把 SGEMM 从朴素版本推近 cuBLAS。</li>
+          <li>wangzyon / NVIDIA_SGEMM_PRACTICE: 对 block tiling、向量化、warp/thread tiling 做了工程化拆解。</li>
+          <li>NVIDIA CUTLASS: 用 Threadblock Tile → Warp Tile → Thread/Instruction Tile 统一表达 GEMM 层次。</li>
+        </ul>
+      </div>
+      <div class="hero-side">
+        <div class="outline-card">
+          <p class="mini-title">本轮交付范围</p>
+          <div class="metric-grid">
+            <div class="metric"><b>3</b><span>独立可运行 HTML 演示</span></div>
+            <div class="metric"><b>2</b><span>已展开的优化步骤</span></div>
+            <div class="metric"><b>5</b><span>完整教程总步骤</span></div>
+          </div>
+        </div>
+        <div class="chart-card">
+          <p class="mini-title">性能爬坡路线（示意）</p>
+          <div class="bars" id="perf-bars">
+            <div class="bar-row"><span>Naive SGEMM</span><div class="bar-track"><div class="bar-fill" data-width="12"></div></div><strong>~12%</strong></div>
+            <div class="bar-row"><span>Coalesced GMEM</span><div class="bar-track"><div class="bar-fill" data-width="24"></div></div><strong>~24%</strong></div>
+            <div class="bar-row"><span>SMEM + Block Tiling</span><div class="bar-track"><div class="bar-fill" data-width="56"></div></div><strong>~56%</strong></div>
+            <div class="bar-row"><span>Vectorized Load</span><div class="bar-track"><div class="bar-fill" data-width="70"></div></div><strong>~70%</strong></div>
+            <div class="bar-row"><span>Warp / CUTLASS Hierarchy</span><div class="bar-track"><div class="bar-fill" data-width="88"></div></div><strong>~88%</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>教程大纲</h2>
+      <div class="outline-steps">
+        <div class="step-card active">
+          <small>前言</small>
+          <strong>GPU 内存层级（GMEM → SMEM → Registers）与性能上限</strong>
+          <p>理解带宽、延迟、容量与复用之间的交换关系，建立“算得快之前先喂得饱”的性能直觉。</p>
+        </div>
+        <div class="step-card active">
+          <small>步骤 1</small>
+          <strong>Naive SGEMM：每线程计算一个 C 元素</strong>
+          <p>建立最基础的线程映射模型，并明确它为什么几乎一定被 GMEM 访问拖住。</p>
+        </div>
+        <div class="step-card active">
+          <small>步骤 2</small>
+          <strong>Global Memory Coalescing：把线程访问整理成尽量少的 128B 事务</strong>
+          <p>让 warp 的地址更连续，减少实际搬运字节浪费，是后续所有优化的入口。</p>
+        </div>
+        <div class="step-card">
+          <small>步骤 3（下一轮）</small>
+          <strong>Shared Memory Caching &amp; Block Tiling</strong>
+          <p>把 A/B 的 tile 暂存到 SMEM，显著提升数据复用，减少重复的 GMEM 读取。</p>
+        </div>
+        <div class="step-card">
+          <small>步骤 4（下一轮）</small>
+          <strong>Vectorized Memory Access：float4 / 128-bit 载入</strong>
+          <p>让单条指令搬更多连续数据，配合对齐约束，提高访存吞吐。</p>
+        </div>
+        <div class="step-card">
+          <small>步骤 5（下一轮）</small>
+          <strong>Warp Tiling &amp; CUTLASS 抽象</strong>
+          <p>把 Threadblock Tile、Warp Tile、Thread Tile 的层级统一起来，逼近高性能内核结构。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>前言：为什么 SGEMM 优化几乎等价于“数据搬运优化”？</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            从公式上看，SGEMM 只是 <code>C = A × B</code>。但真正决定性能的，并不是乘加公式本身，而是数据从哪里来、被重复用了多少次。
+            NVIDIA GPU 上，单个 FMA 指令的执行速度很高；真正昂贵的，是一次又一次从<strong>Global Memory (GMEM)</strong> 把同样的数据重新读进来。
+          </p>
+          <p>
+            这就是为什么三层内存层级必须先吃透：<strong>GMEM 容量大但延迟高</strong>，适合存放完整矩阵；<strong>Shared Memory (SMEM) 更靠近 SM</strong>，适合一个 thread block 共享 tile；
+            <strong>Registers 最快</strong>，适合每个线程私有的局部累加器。一个高性能 GEMM kernel 的本质，就是设法把数据使用路径压缩成：
+            <strong>GMEM 读一次 → SMEM 重用多次 → Registers 再重用多次</strong>。
+          </p>
+          <div class="callout">
+            请先打开“前言演示”，拖动 <strong>Tile Reuse</strong> 滑块。你会看到：当同一批数据在 SMEM 和寄存器中被复用更多次时，
+            <strong>每次 FMA 平摊到的 GMEM 字节数会快速下降</strong>。这就是后续一切优化的主线。
+          </div>
+          <p>
+            从 CUTLASS 的角度看，这件事后来会被表达为层级化 Tile：Threadblock 负责从 GMEM 取大块数据，Warp 负责在 block 内继续分工，Thread/Instruction 负责寄存器级微内核。
+            但在进入那套抽象之前，先建立一个简单心智模型：<strong>越往内层，数据越贵重，越要尽可能“榨干”复用。</strong>
+          </p>
+          <h3>建议你在演示中重点观察的现象</h3>
+          <ul class="tip-list">
+            <li>当复用率很低时，GMEM 条目会变成瓶颈，吞吐被“喂不饱”。</li>
+            <li>当同一 tile 在 SMEM 中被多个线程反复消费时，GMEM 的压力下降最快。</li>
+            <li>寄存器层的累加器让每个线程不必在每次乘加后都把中间结果写回慢速内存。</li>
+          </ul>
+        </div>
+        <div>
+          <pre>核心直觉：
+1. GMEM 适合存“大而全”的原始矩阵。
+2. SMEM 适合存“当前 block 正在吃”的 A/B tile。
+3. Registers 适合存“当前线程私有”的 C 子块累加器。
+4. 优化目标不是只减少指令数，而是减少“昂贵数据路径”的重复次数。</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：GPU 内存层级与复用</h3>
+          <p>文件路径：<code>./demos/preface-memory-hierarchy.html</code></p>
+          <p>可视化要点：GMEM → SMEM → Registers 的数据流动画、复用滑块、估算带宽/延迟/算术强度变化。</p>
+          <div class="actions">
+            <a class="button" href="./demos/preface-memory-hierarchy.html" target="_blank" rel="noopener">打开独立演示</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>步骤 1：Naive SGEMM —— 正确，但几乎注定慢</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            朴素版本通常这样映射：<strong>一个线程负责矩阵 C 中的一个元素</strong>，线程先通过 <code>(row, col)</code> 定位自己的输出，随后在 <code>k = 0..K-1</code> 的循环中不断执行：
+            读取 <code>A[row, k]</code>、读取 <code>B[k, col]</code>、做一次乘加。
+          </p>
+          <pre>sum = 0
+for (k = 0; k &lt; K; ++k) {
+  sum += A[row, k] * B[k, col];
+}
+C[row, col] = sum;</pre>
+          <p>
+            这个 kernel 有两个优点：<strong>实现直接</strong>、<strong>逻辑清晰</strong>。但性能痛点也非常集中：
+          </p>
+          <ul class="tip-list">
+            <li>每个线程在 k 循环中反复从 GMEM 读取 A/B，几乎没有缓存重用。</li>
+            <li>相邻线程虽然都需要相近的数据，但它们没有显式协作，导致同一元素被多个线程重复搬运。</li>
+            <li>算术强度低：一次 FMA 只配套少量计算，却伴随两次慢速读取。</li>
+          </ul>
+          <div class="callout">
+            请打开“Naive SGEMM 演示”，选择一个 <strong>C[row, col]</strong>，再点击 <strong>播放 k 循环</strong>。注意每走一步，
+            只为了当前输出元素的下一次乘加，就又发生了两次 GMEM 读取。你会直观看到：
+            <strong>线程是在算，但 GPU 更多时候是在等数据。</strong>
+          </div>
+          <p>
+            Simon Böhm 的路线之所以从 naive kernel 起步，是因为它把问题暴露得非常干净：一切后续优化，都可以理解为“让这段 k 循环需要的新数据更少、更快、更规则”。
+          </p>
+        </div>
+        <div>
+          <pre>Naive SGEMM 的性能症结：
+- 正确性没有问题。
+- 并行度表面上也足够。
+- 但数据复用几乎为 0。
+- 所以瓶颈常常不是 ALU，而是 GMEM 带宽与延迟。</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：Naive SGEMM 的 k 循环</h3>
+          <p>文件路径：<code>./demos/step1-naive-sgemm.html</code></p>
+          <p>可视化要点：鼠标点击/滑块选择 C 中目标输出，步进观察每次乘加对应的 A 与 B 读取、高亮当前线程与累计和。</p>
+          <div class="actions">
+            <a class="button" href="./demos/step1-naive-sgemm.html" target="_blank" rel="noopener">打开独立演示</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>步骤 2：Global Memory Coalescing —— 先把 32 个线程“排整齐”</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            进入 CUDA 优化的第一道真正门槛，就是要理解：<strong>warp 中 32 个线程的全局内存请求，不是 32 次完全独立的小请求</strong>。硬件会尝试把它们合并成更少的事务；
+            对单精度 float 来说，如果 32 个线程恰好读取 32 个连续的 4B 元素，那么总请求正好是 <strong>128B</strong>，这通常可以映射成非常理想的合并事务。
+          </p>
+          <p>
+            问题在于：如果线程访问是<strong>跨列跳跃</strong>的，比如线程 0 读地址 0、线程 1 读地址 32、线程 2 读地址 64……那么这 32 个线程虽然都在工作，
+            但它们会落到许多不同的 128B 段里，结果是硬件不得不发起更多事务，传输了更多并不真正需要的字节。
+          </p>
+          <div class="callout">
+            请打开“Coalescing 演示”，把模式在 <strong>连续访问</strong> 与 <strong>跨步访问</strong> 之间切换，并拖动 <strong>Stride</strong> 滑块。
+            仔细观察右侧 128B 段的高亮数量：<strong>线程 ID 到地址的映射一旦变稀疏，事务数就会立刻膨胀。</strong>
+          </div>
+          <p>
+            这也是为什么很多 SGEMM 教程会先想办法让线程优先沿着内存连续方向读取，或者通过布局变换/转置/打包，让 warp 的 lane 地址更容易收敛到连续区间。
+            在后续 block tiling 里，这种思想会进一步演化成：<strong>先合并把 tile 拉进来，再在片上内存里慢慢切分与复用。</strong>
+          </p>
+          <h3>判断一个 GMEM 访问模式是否健康的三个问题</h3>
+          <ul class="tip-list">
+            <li>32 个线程是否在访问尽量连续的地址？</li>
+            <li>这些地址是否对齐到较少的 128B 段？</li>
+            <li>硬件实际搬运的字节中，有多少是真正被线程用到的？</li>
+          </ul>
+        </div>
+        <div>
+          <pre>关键结论：
+- 合并访存不是“可选优化”，而是后续优化的地基。
+- 同样读取 32 个 float，理想情况只需 1 个 128B 事务。
+- 一旦 stride 变大，事务数和浪费字节都会飙升。
+- 访问模式的规则性，往往比单线程代码看起来“简洁”更重要。</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：Warp 合并访存与 128B 事务</h3>
+          <p>文件路径：<code>./demos/step2-global-memory-coalescing.html</code></p>
+          <p>可视化要点：32 个线程请求动画、lane 到地址映射、128B transaction 分组、效率统计卡片。</p>
+          <div class="actions">
+            <a class="button" href="./demos/step2-global-memory-coalescing.html" target="_blank" rel="noopener">打开独立演示</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    window.addEventListener('load', () => {
+      document.querySelectorAll('.bar-fill').forEach((bar, index) => {
+        const width = bar.dataset.width || '0';
+        setTimeout(() => { bar.style.width = width + '%'; }, 180 + index * 120);
+      });
+    });
+  </script>
+</body>
+</html>

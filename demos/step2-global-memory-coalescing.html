@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>步骤 2 演示：Global Memory Coalescing</title>
+  <style>
+    :root {
+      --bg: #06111b;
+      --panel: #112338;
+      --border: rgba(255,255,255,0.08);
+      --text: #eef6ff;
+      --muted: #90a7bf;
+      --green: #7cff7f;
+      --cyan: #59d6ff;
+      --orange: #ffb85c;
+      --red: #ff6f7e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", Inter, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+      background: radial-gradient(circle at top right, rgba(89,214,255,0.08), transparent 26%), linear-gradient(180deg, #06111b, #08111b 58%, #040911);
+      color: var(--text);
+    }
+    .page { width: min(1260px, calc(100vw - 24px)); margin: 0 auto; padding: 24px 0 36px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(17,35,56,0.96), rgba(9,18,29,0.98));
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 18px 44px rgba(0,0,0,0.28);
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(1.9rem, 3vw, 2.8rem); }
+    p { color: var(--muted); line-height: 1.65; }
+    .controls {
+      display: grid;
+      grid-template-columns: 180px 1fr auto auto;
+      gap: 14px;
+      align-items: center;
+    }
+    select, input[type="range"] {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 10px 12px;
+      accent-color: var(--green);
+    }
+    button {
+      background: rgba(124,255,127,0.12);
+      border: 1px solid rgba(124,255,127,0.28);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .layout { display: grid; grid-template-columns: 1.5fr 0.9fr; gap: 18px; }
+    canvas { width: 100%; height: 560px; display: block; border-radius: 18px; background: rgba(255,255,255,0.02); }
+    .stats { display: grid; gap: 12px; }
+    .stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .stat {
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .stat b { display: block; font-size: 1.45rem; color: var(--green); }
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: var(--muted);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .tip {
+      border-left: 4px solid var(--green);
+      border-radius: 14px;
+      background: rgba(124,255,127,0.08);
+      padding: 14px 16px;
+      color: var(--text);
+    }
+    @media (max-width: 980px) {
+      .controls, .layout, .stat-row { grid-template-columns: 1fr; }
+      canvas { height: 620px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <h1>步骤 2：Warp 合并访存与 128B 事务</h1>
+      <p>切换访问模式，并拖动 <strong>Stride</strong> 或 <strong>Lane Step</strong>。左侧是 warp 内 32 个线程，右侧是按 128B 切分的全局内存段。请观察：当线程地址连续时，右侧只需要极少段；当地址稀疏时，事务数量和浪费字节会迅速上升。</p>
+      <div class="controls">
+        <select id="patternSelect">
+          <option value="coalesced">连续访问（理想 coalesced）</option>
+          <option value="strided">跨步访问（模拟列读取）</option>
+        </select>
+        <label>Stride（单位：float） = <strong id="strideLabel">1</strong><input id="strideRange" type="range" min="1" max="16" value="1"></label>
+        <button id="playBtn">播放 lane 动画</button>
+        <button id="presetBtn">切到最差案例</button>
+      </div>
+    </section>
+
+    <div class="layout">
+      <section class="panel">
+        <canvas id="canvas" width="820" height="560"></canvas>
+        <div class="legend">
+          <span class="chip"><span class="dot" style="background:#7cff7f"></span>当前活动 lane</span>
+          <span class="chip"><span class="dot" style="background:#59d6ff"></span>被命中的 128B segment</span>
+          <span class="chip"><span class="dot" style="background:#ffb85c"></span>lane → address 映射线</span>
+          <span class="chip"><span class="dot" style="background:#ff6f7e"></span>无效搬运浪费</span>
+        </div>
+      </section>
+
+      <section class="panel stats">
+        <div class="stat-row">
+          <div class="stat"><span>Lane Step</span><b id="laneStat">0 / 31</b></div>
+          <div class="stat"><span>128B 事务数</span><b id="txnStat">1</b></div>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><span>请求字节</span><b id="requestedStat">128 B</b></div>
+          <div class="stat"><span>实际搬运字节</span><b id="transferredStat">128 B</b></div>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><span>有效率</span><b id="efficiencyStat">100%</b></div>
+          <div class="stat"><span>访问模式评价</span><b id="verdictStat">完美合并</b></div>
+        </div>
+        <label>Lane Step = <strong id="laneLabel">0</strong><input id="laneRange" type="range" min="0" max="31" value="0"></label>
+        <div class="tip" id="tipText"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const patternSelect = document.getElementById('patternSelect');
+    const strideRange = document.getElementById('strideRange');
+    const strideLabel = document.getElementById('strideLabel');
+    const laneRange = document.getElementById('laneRange');
+    const laneLabel = document.getElementById('laneLabel');
+    const laneStat = document.getElementById('laneStat');
+    const txnStat = document.getElementById('txnStat');
+    const requestedStat = document.getElementById('requestedStat');
+    const transferredStat = document.getElementById('transferredStat');
+    const efficiencyStat = document.getElementById('efficiencyStat');
+    const verdictStat = document.getElementById('verdictStat');
+    const tipText = document.getElementById('tipText');
+    const playBtn = document.getElementById('playBtn');
+    const presetBtn = document.getElementById('presetBtn');
+
+    let timer = null;
+    const baseAddress = 4096;
+
+    function getStride() {
+      return patternSelect.value === 'coalesced' ? 1 : Number(strideRange.value);
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function computeAccesses() {
+      const stride = getStride();
+      return Array.from({ length: 32 }, (_, lane) => {
+        const address = baseAddress + lane * stride * 4;
+        return {
+          lane,
+          address,
+          segment: Math.floor(address / 128),
+          offset: address % 128
+        };
+      });
+    }
+
+    function render() {
+      const activeLane = Number(laneRange.value);
+      const accesses = computeAccesses();
+      const segments = [...new Set(accesses.map((item) => item.segment))];
+      const segMap = new Map(segments.map((seg, i) => [seg, i]));
+      const requestedBytes = accesses.length * 4;
+      const transferredBytes = segments.length * 128;
+      const efficiency = Math.round(requestedBytes / transferredBytes * 100);
+
+      strideLabel.textContent = String(getStride());
+      laneLabel.textContent = String(activeLane);
+      laneStat.textContent = `${activeLane} / 31`;
+      txnStat.textContent = String(segments.length);
+      requestedStat.textContent = `${requestedBytes} B`;
+      transferredStat.textContent = `${transferredBytes} B`;
+      efficiencyStat.textContent = `${efficiency}%`;
+      verdictStat.textContent = segments.length === 1 ? '完美合并' : segments.length <= 4 ? '可接受' : '事务爆炸';
+      tipText.textContent = segments.length === 1
+        ? '32 个 lane 读取 32 个连续 float，刚好压缩成一个 128B 事务。这就是最理想的 coalesced 访问。'
+        : segments.length <= 4
+          ? '你已经能看到事务在增加：虽然还不是最糟，但硬件正在搬运更多边角字节，效率开始下降。'
+          : '现在每个 lane 之间相距太远，地址散落到大量 128B 段。线程没有变少，但事务数膨胀，内存系统会非常痛苦。';
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#90a7bf';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText('左：warp 的 32 个线程（lane 0-31）', 56, 34);
+      ctx.fillText('右：全局内存按 128B 划分的 segment', 430, 34);
+
+      const lanePositions = accesses.map((item, lane) => ({ x: 92, y: 70 + lane * 14.2, lane: item.lane }));
+      const twoColumns = segments.length > 6;
+      const columns = twoColumns ? 2 : 1;
+      const rows = Math.ceil(segments.length / columns);
+      const segmentGap = twoColumns ? 10 : 12;
+      const segmentTop = 70;
+      const segmentHeight = twoColumns ? 42 : 58;
+      const columnWidth = twoColumns ? 148 : 310;
+      const secondColumnX = 592;
+      const segmentBoxes = segments.map((segment, index) => {
+        const column = twoColumns ? Math.floor(index / rows) : 0;
+        const row = twoColumns ? index % rows : index;
+        return {
+          x: column === 0 ? 430 : secondColumnX,
+          y: segmentTop + row * (segmentHeight + segmentGap),
+          w: columnWidth,
+          h: segmentHeight,
+          cellW: (columnWidth - 36) / 32,
+          segment
+        };
+      });
+
+      accesses.forEach((item, i) => {
+        const pos = lanePositions[i];
+        const box = segmentBoxes[segMap.get(item.segment)];
+        const cellX = box.x + 18 + (item.offset / 4) * box.cellW;
+        const cellY = box.y + (box.h > 46 ? 18 : 13);
+        const active = i <= activeLane;
+
+        if (active) {
+          ctx.strokeStyle = i === activeLane ? 'rgba(255,184,92,0.95)' : 'rgba(255,184,92,0.28)';
+          ctx.lineWidth = i === activeLane ? 2.6 : 1.2;
+          ctx.beginPath();
+          ctx.moveTo(pos.x + 12, pos.y);
+          ctx.bezierCurveTo(210, pos.y, 270, cellY + 8, cellX, cellY + 8);
+          ctx.stroke();
+        }
+      });
+
+      lanePositions.forEach((pos, i) => {
+        const active = i <= activeLane;
+        ctx.fillStyle = i === activeLane ? '#7cff7f' : active ? 'rgba(124,255,127,0.44)' : 'rgba(255,255,255,0.14)';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#eef6ff';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.fillText(`lane ${i}`, pos.x + 14, pos.y + 4);
+      });
+
+      segmentBoxes.forEach((box) => {
+        const touched = accesses.some((item) => item.segment === box.segment && item.lane <= activeLane);
+        ctx.strokeStyle = touched ? 'rgba(89,214,255,0.75)' : 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = touched ? 2.2 : 1.1;
+        roundRect(box.x, box.y, box.w, box.h, 16);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fill();
+
+        ctx.fillStyle = '#59d6ff';
+        ctx.font = '13px Inter, sans-serif';
+        const label = box.w > 200
+          ? `segment ${box.segment} · 地址 [${box.segment * 128}, ${(box.segment + 1) * 128 - 1}]`
+          : `seg ${box.segment}`;
+        ctx.font = box.w > 200 ? '13px Inter, sans-serif' : '12px Inter, sans-serif';
+        ctx.fillText(label, box.x + 12, box.y + 14);
+
+        for (let i = 0; i < 32; i++) {
+          const cellX = box.x + 18 + i * box.cellW;
+          const cellY = box.y + (box.h > 46 ? 24 : 18);
+          ctx.fillStyle = 'rgba(255,255,255,0.05)';
+          roundRect(cellX, cellY, Math.max(2, box.cellW - 1), box.h > 46 ? 22 : 14, 2);
+          ctx.fill();
+        }
+      });
+
+      accesses.forEach((item) => {
+        if (item.lane > activeLane) return;
+        const box = segmentBoxes[segMap.get(item.segment)];
+        const cellX = box.x + 18 + (item.offset / 4) * box.cellW;
+        const cellY = box.y + (box.h > 46 ? 24 : 18);
+        ctx.fillStyle = item.lane === activeLane ? '#7cff7f' : '#ffb85c';
+        roundRect(cellX, cellY, Math.max(2, box.cellW - 1), box.h > 46 ? 22 : 14, 2);
+        ctx.fill();
+      });
+
+      const waste = Math.max(0, transferredBytes - requestedBytes);
+      ctx.fillStyle = '#ff6f7e';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText(`浪费字节 = ${waste} B（搬了但线程没用到）`, 430, 520);
+    }
+
+    function syncToPattern() {
+      if (patternSelect.value === 'coalesced') strideRange.value = '1';
+      render();
+    }
+
+    patternSelect.addEventListener('change', syncToPattern);
+    strideRange.addEventListener('input', render);
+    laneRange.addEventListener('input', render);
+
+    playBtn.addEventListener('click', () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+        playBtn.textContent = '播放 lane 动画';
+      } else {
+        laneRange.value = '0';
+        render();
+        playBtn.textContent = '暂停';
+        timer = setInterval(() => {
+          const next = Number(laneRange.value) + 1;
+          laneRange.value = String(Math.min(31, next));
+          render();
+          if (next >= 31) {
+            clearInterval(timer);
+            timer = null;
+            playBtn.textContent = '播放 lane 动画';
+          }
+        }, 120);
+      }
+    });
+
+    presetBtn.addEventListener('click', () => {
+      patternSelect.value = 'strided';
+      strideRange.value = '16';
+      laneRange.value = '31';
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
