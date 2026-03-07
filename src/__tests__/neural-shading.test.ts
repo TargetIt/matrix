@@ -152,4 +152,32 @@ describe("NeuralShader", () => {
     // 2 hidden + 1 output = 3 layers total
     expect(shader.network.layers).toHaveLength(3);
   });
+
+  it("supports zero hidden layers", async () => {
+    const ctx = await cpuCtx();
+    const shader = NeuralShader.create(ctx, { hiddenLayers: 0 });
+    expect(shader.network.layers).toHaveLength(1);
+
+    const rgb = await shader.shadePoint({
+      position: [0, 0, 0],
+      normal: [0, 1, 0],
+      viewDir: [0, -1, 0],
+    });
+    expect(rgb.r).toBeGreaterThanOrEqual(0);
+    expect(rgb.r).toBeLessThanOrEqual(1);
+    expect(rgb.g).toBeGreaterThanOrEqual(0);
+    expect(rgb.g).toBeLessThanOrEqual(1);
+    expect(rgb.b).toBeGreaterThanOrEqual(0);
+    expect(rgb.b).toBeLessThanOrEqual(1);
+  });
+
+  it("rejects inputFeatures smaller than the built-in shading encoding", async () => {
+    const ctx = await cpuCtx();
+    expect(() => NeuralShader.create(ctx, { inputFeatures: 8 })).toThrow(RangeError);
+  });
+
+  it("rejects negative hidden layer counts", async () => {
+    const ctx = await cpuCtx();
+    expect(() => NeuralShader.create(ctx, { hiddenLayers: -1 })).toThrow(RangeError);
+  });
 });

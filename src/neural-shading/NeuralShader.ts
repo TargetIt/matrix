@@ -71,7 +71,28 @@ export class NeuralShader {
     const depth = config.hiddenLayers ?? 3;
     const hiddenAct = config.hiddenActivation ?? "relu";
 
+    if (!Number.isInteger(inFeatures) || inFeatures < 9) {
+      throw new RangeError(
+        `inputFeatures must be an integer greater than or equal to 9, got ${inFeatures}`,
+      );
+    }
+    if (!Number.isInteger(depth) || depth < 0) {
+      throw new RangeError(
+        `hiddenLayers must be a non-negative integer, got ${depth}`,
+      );
+    }
+    if (depth > 0 && (!Number.isInteger(hidden) || hidden <= 0)) {
+      throw new RangeError(
+        `hiddenSize must be a positive integer when hiddenLayers > 0, got ${hidden}`,
+      );
+    }
+
     const layers: LinearLayer[] = [];
+
+    if (depth === 0) {
+      layers.push(new LinearLayer(inFeatures, 3, "sigmoid"));
+      return new NeuralShader(new MLP(layers, ctx), inFeatures);
+    }
 
     // First layer: inFeatures → hidden
     layers.push(new LinearLayer(inFeatures, hidden, hiddenAct));
