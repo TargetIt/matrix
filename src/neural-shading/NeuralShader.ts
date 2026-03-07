@@ -121,27 +121,27 @@ export class NeuralShader {
   /**
    * Encode an array of ShadingInputs into a (batchSize × inputFeatures) Matrix.
    * Default encoding: [px, py, pz, nx, ny, nz, vx, vy, vz].
+   * Any extra features beyond the base 9 are padded with zeros.
    */
   private encodeInputs(inputs: ShadingInput[]): Matrix {
-    const flat: number[] = [];
-    for (const inp of inputs) {
-      flat.push(
-        ...inp.position,
-        ...inp.normal,
-        ...inp.viewDir,
-      );
+    const n = inputs.length;
+    const f = this.inputFeatures;
+    const flat = new Float32Array(n * f); // pre-allocated, remaining slots default to 0
+    for (let i = 0; i < n; i++) {
+      const base = i * f;
+      const inp = inputs[i];
+      flat[base + 0] = inp.position[0];
+      flat[base + 1] = inp.position[1];
+      flat[base + 2] = inp.position[2];
+      flat[base + 3] = inp.normal[0];
+      flat[base + 4] = inp.normal[1];
+      flat[base + 5] = inp.normal[2];
+      flat[base + 6] = inp.viewDir[0];
+      flat[base + 7] = inp.viewDir[1];
+      flat[base + 8] = inp.viewDir[2];
+      // extra features beyond index 8 are left as 0 (already the default)
     }
-    // If a custom inputFeatures count was provided and exceeds 9, pad with zeros.
-    const baseLen = 9;
-    const extra = this.inputFeatures - baseLen;
-    if (extra > 0) {
-      for (let i = 0; i < inputs.length; i++) {
-        for (let j = 0; j < extra; j++) {
-          flat.splice((i + 1) * this.inputFeatures - extra + j, 0, 0);
-        }
-      }
-    }
-    return new Matrix(inputs.length, this.inputFeatures, flat);
+    return new Matrix(n, f, flat);
   }
 
   /** Access the underlying MLP (e.g. to inspect or replace layer weights). */
