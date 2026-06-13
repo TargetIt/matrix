@@ -48,11 +48,13 @@
     @keyframes flow{to{width:100%}}
     .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;color:var(--muted);font-size:12px}
     .legend i{width:10px;height:10px;display:inline-block;margin-right:5px}
+    .guide{margin:18px 0 0;padding:12px 14px;border-left:4px solid var(--math);background:#fff7e8;color:var(--muted)}
     .notes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
     .note{border-top:1px solid var(--line);padding-top:12px}.note strong{display:block;margin-bottom:4px}.note p{color:var(--muted);margin:0}
     .back{display:inline-block;color:var(--ink);text-decoration:none;font-weight:700;margin-bottom:10px}
     @media(max-width:900px){header{display:block}.source{margin-top:12px}.toolbar{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.notes{grid-template-columns:1fr}}
-    @media(max-width:560px){.shell{width:min(100% - 20px,1280px);padding-top:12px}.toolbar{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr}.stages{grid-template-columns:1fr}}
+    .node:focus{outline:none}.node:focus rect{stroke-width:6}
+    @media(max-width:560px){.shell{width:min(100% - 20px,1280px);padding-top:12px}.toolbar{grid-template-columns:1fr}.metrics{grid-template-columns:1fr}.stages{grid-template-columns:1fr}.panel{padding:12px}.panel-head{display:block}.tabs{margin-top:10px}}
   </style>
 </head>
 <body>
@@ -64,8 +66,9 @@
       <h1>CUTLASS：GEMM 层级如何映射到 GPU</h1>
       <p class="lede">从矩阵问题逐层进入 thread block、warp 与 thread。尺寸、复用、存储和流水线均由原文中的 CUTLASS policy 参数实时计算。</p>
     </div>
-    <div class="source"><a href="original.md">阅读原文</a><br>默认 policy：128×32×8</div>
+    <div class="source"><a href="original.md">阅读原文</a> · <a href="SOURCE.md">来源记录</a><br>默认 policy：128×32×8</div>
   </header>
+  <p class="guide"><strong>阅读路径：</strong>先观察完整 GEMM，再依次选择 Thread Block、Warp、Thread。只有进入当前层级后，内部结构才会高亮；右侧参数用于进一步实验。</p>
 
   <section class="toolbar" aria-label="CUTLASS policy 参数">
     <div class="control"><label for="bm">Block M</label><output id="bmOut">128</output><input id="bm" type="range" min="32" max="256" step="32" value="128"></div>
@@ -119,6 +122,7 @@
   </section>
 </main>
 <script>
+'use strict';
 const $=id=>document.getElementById(id);
 const controls=['bm','bn','bk','tm','tn'];
 const levels=[
@@ -133,7 +137,7 @@ function fmtBytes(n){return n>=1024?`${(n/1024).toFixed(1)} KiB`:`${n} B`}
 function values(){return Object.fromEntries(controls.map(k=>[k,+$(k).value]))}
 function renderTabs(){
   $('tabs').innerHTML=levels.map((l,i)=>`<button class="${i===selected?'active':''}" data-i="${i}">${l.label}</button>`).join('');
-  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{selected=+b.dataset.i;render()});
+  $('tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selected=+b.dataset.i;render()}));
 }
 function renderSvg(v){
   const svg=$('hierarchy'), centerX=410;
@@ -142,7 +146,7 @@ function renderSvg(v){
   levels.forEach((l,i)=>{
     const w=widths[i],h=heights[i],x=centerX-w/2,y=38+i*48;
     const active=i===selected, opacity=i>selected?.22:1;
-    html+=`<g class="node" data-i="${i}" opacity="${opacity}">
+    html+=`<g class="node" data-i="${i}" role="button" tabindex="0" aria-label="查看 ${l.label}" aria-current="${active?'step':'false'}" opacity="${opacity}">
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${active?l.color+'18':'#fff'}" stroke="${l.color}" stroke-width="${active?4:2}" filter="url(#shadow)"/>
       <text x="${x+18}" y="${y+29}" class="node-label" fill="${l.color}">${l.label}</text>
       <text x="${x+18}" y="${y+49}" class="node-sub">${l.sub}</text>
@@ -157,7 +161,11 @@ function renderSvg(v){
   html+=`<g opacity="${selected>=2?1:.2}"><rect x="310" y="185" width="200" height="128" fill="#7755b722" stroke="#7755b7" stroke-width="2"/><text x="410" y="210" text-anchor="middle" fill="#7755b7" font-weight="800">Warp partition</text>
   <rect x="${410-tx/2}" y="${245-ty/2}" width="${tx}" height="${ty}" fill="#138a6540" stroke="#138a65" stroke-width="3"/><text x="410" y="252" text-anchor="middle" fill="#0f654d" font-weight="800">${v.tm}×${v.tn} / thread</text></g>`;
   svg.innerHTML=html;
-  svg.querySelectorAll('.node').forEach(n=>n.onclick=()=>{selected=+n.dataset.i;render()});
+  svg.querySelectorAll('.node').forEach(n=>{
+    const activate=()=>{selected=+n.dataset.i;render()};
+    n.addEventListener('click',activate);
+    n.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate()}});
+  });
 }
 function render(){
   const v=values(); controls.forEach(k=>$(k+'Out').value=v[k]);

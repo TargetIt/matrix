@@ -1,6 +1,86 @@
-# CUTLASS: Fast Linear Algebra in CUDA C++
+DEVELOPER
 
-> 本文由 NotebookLM `MATRIX 演进跟踪` 来源导出后清理网页导航、社交按钮和推荐内容。技术正文未改写。完整原始导出见 [`notebooklm-export.md`](notebooklm-export.md)。
+ Join 
+
+Technical Blog
+
+ Subscribe 
+
+ Related Resources 
+
+Simulation / Modeling / Design
+
+CUTLASS: Fast Linear Algebra in CUDA C++
+
+ Dec 05, 2017   By 
+
+Andrew Kerr
+
+https://developer.nvidia.com/blog/author/akerr/
+
+, 
+
+Duane Merrill
+
+https://developer.nvidia.com/blog/author/dumerrill/
+
+, 
+
+Julien Demouth
+
+https://developer.nvidia.com/blog/author/jdemouth/
+
+ and 
+
+John Tran
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ Like 
+
+ Discuss (13) 
+
+https://developer.nvidia.com#entry-content-comments
+
+L
+
+https://developer.nvidia.com#entry-content-comments
+
+T
+
+https://developer.nvidia.com#entry-content-comments
+
+F
+
+https://developer.nvidia.com#entry-content-comments
+
+R
+
+https://developer.nvidia.com#entry-content-comments
+
+E
+
+https://developer.nvidia.com#entry-content-comments
+
+AI-Generated Summary  
+
+Like   Dislike  
+
+CUTLASS is a collection of CUDA C++ templates for implementing high-performance General Matrix Multiplication (GEMM) computations on NVIDIA GPUs.
+
+CUTLASS decomposes GEMM into fundamental components, allowing programmers to customize and specialize them within their own CUDA kernels for efficient dense linear algebra.
+
+CUTLASS supports mixed-precision computations, including 8-bit integer, half-precision floating point (FP16), single-precision floating point (FP32), and double-precision floating point (FP64) types, as well as the WMMA API for Tensor Cores in the Volta architecture.
+
+The hierarchical GEMM structure in CUTLASS mirrors the NVIDIA CUDA programming model, with a hierarchy of thread block tiles, warp tiles, and thread tiles, and applies the strategy of accumulating matrix products for efficient computation.
+
+CUTLASS achieves performance comparable to cuBLAS for scalar GEMM computations and can be used to fuse element-wise operations with GEMM, such as computing an activation function, to eliminate extra kernel launches and improve performance.
+
+AI-generated content may summarize information incompletely. Verify important information. 
+
+Learn more
+
+https://www.nvidia.com/en-us/agreements/trustworthy-ai/terms/
 
 Update May 21, 2018
 
@@ -829,3 +909,177 @@ https://arxiv.org/abs/1509.09308
 http://icl.cs.utk.edu/magma/index.html
 
 http://icl.cs.utk.edu/magma/index.html
+
+ Discuss (13) 
+
+http://icl.cs.utk.edu/magma/index.html
+
+ Like 
+
+Tags
+
+AR / VR
+
+http://icl.cs.utk.edu/magma/index.html
+
+ | 
+
+General
+
+https://developer.nvidia.com/blog/recent-posts/?industry=General
+
+ | 
+
+cuBLAS
+
+https://developer.nvidia.com/blog/recent-posts/?products=cuBLAS
+
+ | 
+
+CUDA
+
+https://developer.nvidia.com/blog/recent-posts/?products=CUDA
+
+ | 
+
+Beginner Technical
+
+https://developer.nvidia.com/blog/recent-posts/?learning_levels=Beginner+Technical
+
+ | 
+
+Accelerated Computing Libraries
+
+https://developer.nvidia.com/blog/tag/development-tools-and-libraries/
+
+ | 
+
+C++
+
+https://developer.nvidia.com/blog/tag/c/
+
+ | 
+
+Linear Algebra
+
+https://developer.nvidia.com/blog/tag/linear-algebra/
+
+ About the Authors 
+
+ About Andrew Kerr 
+
+ Andrew is a Senior GPU Compute Architect at NVIDIA. He joined NVIDIA's Compute Architecture group in 2012 after finishing his Ph.D. at Georgia Institute of Technology. Lately, Andrew's technical focus has been to design and implement abstractions for linear algebra on GPUs to facilitate programmability as performance continues to scale. 
+
+ View all posts by Andrew Kerr  
+
+https://developer.nvidia.com/blog/author/akerr/
+
+ About Duane Merrill 
+
+ Duane Merrill is a Senior Research Scientist with NVIDIA Research. His principal research interests are parallel algorithm and programming model design. In particular, his work has focused on problems involving sparse, irregular, and cooperative computation, notably parallel sorting and graph algorithms. He is the author of CUB, a library of “collective” software primitives to simplify CUDA kernel construction, performance tuning, and maintenance. He received his Ph. D. from the University of Virginia. 
+
+ View all posts by Duane Merrill  
+
+https://developer.nvidia.com/blog/author/dumerrill/
+
+ About Julien Demouth 
+
+ Julien is a Senior Manager in the GPU Architecture group at NVIDIA. He is one of the co-authors of many of the low level implementations for Deep Learning in cuDNN and TensorRT. Among other things, Julien wrote the first version of FFT-based 2D convolutions for cuDNN, he wrote a large fraction of the Implicit GEMM convolutions for Maxwell, Pascal and Volta GPUs, and he is the author of several Winograd implementations. Julien holds a Ph.D. in Computational Geometry from INRIA in France. 
+
+ View all posts by Julien Demouth  
+
+https://developer.nvidia.com/blog/author/jdemouth/
+
+ About John Tran 
+
+ John is a Director in the GPU Architecture group at NVIDIA. He joined NVIDIA in 2005, contributing to almost every major GPU architecture released since then. He spent a few years in NVIDIA Research, but is now back in the GPU Architecture team, leading several of NVIDIA’s Deep Learning architecture and software efforts. John completed his Master’s degree at the University of Virginia and undergraduate degree at Duke University. 
+
+ View all posts by John Tran  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+Comments
+
+Related posts
+
+ Introducing Grouped GEMM APIs in cuBLAS and More Performance Updates 
+
+Introducing Grouped GEMM APIs in cuBLAS and More Performance Updates  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ New cuBLAS 12.0 Features and Matrix Multiplication Performance on NVIDIA Hopper GPUs 
+
+New cuBLAS 12.0 Features and Matrix Multiplication Performance on NVIDIA Hopper GPUs  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ Implementing High Performance Matrix Multiplication Using CUTLASS v2.8 
+
+Implementing High Performance Matrix Multiplication Using CUTLASS v2.8  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ CUTLASS: Fast Linear Algebra in CUDA C++ 
+
+CUTLASS: Fast Linear Algebra in CUDA C++  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ Pro Tip: cuBLAS Strided Batched Matrix Multiply 
+
+Pro Tip: cuBLAS Strided Batched Matrix Multiply  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+Related posts
+
+ R²D²: Scaling Multimodal Robot Learning with NVIDIA Isaac Lab 
+
+R²D²: Scaling Multimodal Robot Learning with NVIDIA Isaac Lab  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ Using Accelerated Computing to Live-Steer Scientific Experiments at Massive Research Facilities 
+
+Using Accelerated Computing to Live-Steer Scientific Experiments at Massive Research Facilities  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ Automating Inference Optimizations with NVIDIA TensorRT LLM AutoDeploy 
+
+Automating Inference Optimizations with NVIDIA TensorRT LLM AutoDeploy  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ 3 Ways NVFP4 Accelerates AI Training and Inference 
+
+3 Ways NVFP4 Accelerates AI Training and Inference  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+ How to Build License-Compliant Synthetic Data Pipelines for AI Model Distillation 
+
+How to Build License-Compliant Synthetic Data Pipelines for AI Model Distillation  
+
+https://developer.nvidia.com/blog/author/jotran/
+
+L
+
+https://developer.nvidia.com/blog/author/jotran/
+
+T
+
+https://developer.nvidia.com/blog/author/jotran/
+
+F
+
+https://developer.nvidia.com/blog/author/jotran/
+
+R
+
+https://developer.nvidia.com/blog/author/jotran/
+
+E
+
+https://developer.nvidia.com/blog/author/jotran/

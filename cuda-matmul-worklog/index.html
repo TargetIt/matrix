@@ -13,16 +13,18 @@
     .eyebrow{font-weight:850;color:var(--red);letter-spacing:.08em;text-transform:uppercase}h1{font-family:Georgia,"Songti SC",serif;font-size:clamp(30px,4.5vw,56px);line-height:1.02;margin:7px 0 10px;letter-spacing:0}
     header p{max-width:790px;color:var(--muted);margin:0}.meta{text-align:right;color:var(--muted)}.meta b{color:var(--ink)}
     .summary{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-top:0}.summary div{padding:14px;border-right:1px solid var(--line)}.summary div:last-child{border:0}.summary span{display:block;color:var(--muted);font-size:12px}.summary b{font-size:23px}
-    .grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr);gap:16px;margin-top:18px}.panel{min-width:0;background:var(--surface);border:1px solid var(--line);padding:17px}
-    .panel h2{font-size:20px;margin:0}.sub{color:var(--muted);font-size:13px;margin:3px 0 14px}.wide{grid-column:1/-1}
+    .grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr);gap:16px;align-items:start;margin-top:18px}.panel{min-width:0;background:var(--surface);border:1px solid var(--line);padding:17px}
+    .panel h2{font-size:20px;margin:0}.sub{color:var(--muted);font-size:13px;margin:3px 0 14px}.wide{grid-column:1/-1}.tools-stack{display:grid;gap:16px;min-width:0}
     #perfChart,#roofChart{width:100%;height:auto;display:block;background:#fbfaf6}.axis{stroke:#9da39a}.gridline{stroke:#e1e1da}.tick{font-size:11px;fill:var(--muted)}.point{cursor:pointer;transition:r .15s}.point:hover{r:8}
     .kernel-card{border-left:5px solid var(--blue);padding:13px;background:#f2f5f5;margin-top:10px}.kernel-card h3{margin:0 0 5px}.kernel-card p{color:var(--muted);margin:0}.kernel-card .stats{display:flex;gap:22px;margin-top:10px}.kernel-card strong{font-size:22px}.kernel-card span{font-size:12px;color:var(--muted);display:block}
     .controls{display:grid;gap:12px}.control{display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center}.control label{color:var(--muted)}.control output{font-weight:800}.control input{grid-column:1/-1;width:100%;accent-color:var(--blue)}
     .result{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{border-top:3px solid var(--blue);background:#f1f3ef;padding:11px}.metric span{font-size:12px;color:var(--muted);display:block}.metric b{font-size:22px}
     .limit{padding:11px;background:#f8ecd9;border-left:4px solid var(--amber);margin-top:10px}.limit b{color:#8a570d}
-    .stages{display:flex;max-width:100%;gap:6px;align-items:stretch;overflow-x:auto;padding-bottom:5px}.stage{min-width:130px;flex:1;border-top:5px solid var(--line);padding:10px 8px;background:#f4f3ed}.stage.done{border-color:var(--blue)}.stage.active{border-color:var(--lime);background:#f1f6df}.stage b{display:block;font-size:12px}.stage span{font-size:18px;font-weight:800}.stage small{display:block;color:var(--muted)}
+    .stages{display:flex;max-width:100%;gap:6px;align-items:stretch;overflow-x:auto;padding-bottom:5px}.stage{min-width:130px;flex:1;border:0;border-top:5px solid var(--line);padding:10px 8px;background:#f4f3ed}.stage.done{border-color:var(--blue)}.stage.active{border-color:var(--lime);background:#f1f6df}.stage b{display:block;font-size:12px}.stage span{font-size:18px;font-weight:800}.stage small{display:block;color:var(--muted)}
     .occupancy{display:grid;grid-template-columns:1fr 1fr;gap:14px}.formula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#20231f;color:#e7eed2;padding:14px;overflow:auto}.formula em{color:#bada64;font-style:normal}
     .caution{border-top:1px solid var(--line);margin-top:12px;padding-top:12px;color:var(--muted)}
+    details.tool{padding:0}details.tool>summary{list-style:none;cursor:pointer;padding:17px;display:flex;justify-content:space-between;gap:12px}details.tool>summary::-webkit-details-marker{display:none}details.tool>summary::after{content:"展开实验";color:var(--blue);font-weight:800}details.tool[open]>summary::after{content:"收起"}details.tool>.tool-body{padding:0 17px 17px;border-top:1px solid var(--line)}
+    .point:focus{outline:none;stroke:var(--ink);stroke-width:4px}.stage{cursor:pointer;color:inherit;text-align:left;font:inherit}.stage:focus{outline:3px solid var(--amber);outline-offset:2px}
     @media(max-width:920px){header{grid-template-columns:1fr}.meta{text-align:left}.summary{grid-template-columns:1fr 1fr}.grid{grid-template-columns:minmax(0,1fr)}.occupancy{grid-template-columns:minmax(0,1fr)}}
     @media(max-width:560px){.summary,.result{grid-template-columns:1fr}.summary div{border-right:0;border-bottom:1px solid var(--line)}}
   </style>
@@ -32,21 +34,24 @@
   <a class="back" href="../index.html">← MATRIX 可视化入口</a>
   <header>
     <div><div class="eyebrow">Source 03 · CUDA Matmul Worklog</div><h1>从 1.3% 到 93.7%：瓶颈如何迁移</h1><p>把逐步优化记录转成可操作的性能实验室：定位每级吞吐、探索理论 Roofline，并用寄存器、SMEM 和线程资源复算 occupancy。</p></div>
-    <div class="meta"><b>NVIDIA A6000</b><br>FP32 peak 30 TFLOPS · 768 GB/s<br><a href="original.md">阅读原文</a></div>
+    <div class="meta"><b>NVIDIA A6000</b><br>FP32 peak 30 TFLOPS · 768 GB/s<br><a href="original.md">阅读原文</a> · <a href="SOURCE.md">来源记录</a></div>
   </header>
   <section class="summary">
-    <div><span>Naive</span><b>309 GFLOPS</b></div><div><span>Warptiling</span><b>21.78 TFLOPS</b></div><div><span>cuBLAS</span><b>23.25 TFLOPS</b></div><div><span>总提升</span><b>70.5×</b></div>
+    <div><span>Naive</span><b>309 GFLOPS</b></div><div><span>Warp Tiling</span><b>21.78 TFLOPS</b></div><div><span>cuBLAS</span><b>23.25 TFLOPS</b></div><div><span>总提升</span><b>70.5×</b></div>
   </section>
 
   <div class="grid">
     <section class="panel">
       <h2>优化轨迹</h2><p class="sub">数据来自原文总表；点击节点查看该步骤改变了什么。</p>
       <svg id="perfChart" viewBox="0 0 820 390" role="img" aria-label="CUDA SGEMM 优化性能折线图"></svg>
+      <p class="sub"><span style="color:var(--lime)">● 当前步骤</span>　<span style="color:var(--blue)">● 自定义 kernel</span>　<span style="color:var(--amber)">● cuBLAS 基准</span></p>
       <div class="stages" id="stages"></div>
       <article class="kernel-card" id="kernelCard"></article>
     </section>
-    <section class="panel">
-      <h2>方阵计算下界</h2><p class="sub">沿用原文公式：FLOPs = 2N³ + N²；最少读写 4 个 FP32 矩阵量。</p>
+    <aside class="tools-stack" aria-label="深入分析工具">
+    <details class="panel tool">
+      <summary><span><strong>方阵计算下界</strong><br><small class="sub">从优化轨迹继续下钻到理论时间边界。</small></span></summary>
+      <div class="tool-body"><p class="sub">沿用原文公式：FLOPs = 2N³ + N²；最少读写 4 个 FP32 矩阵量。</p>
       <div class="controls">
         <div class="control"><label for="size">矩阵边长 N</label><output id="sizeOut">4092</output><input id="size" type="range" min="256" max="8192" step="4" value="4092"></div>
       </div>
@@ -55,18 +60,20 @@
         <div class="metric"><span>30 TFLOPS 下界</span><b id="computeTime"></b></div><div class="metric"><span>768 GB/s 下界</span><b id="memoryTime"></b></div>
       </div>
       <div class="limit" id="boundText"></div>
-      <p class="caution">这是理想下界，不包含缓存失效、指令混合、同步、launch 和实际内存事务放大。</p>
-    </section>
+      <p class="caution">这是理想下界，不包含缓存失效、指令混合、同步、launch 和实际内存事务放大。</p></div>
+    </details>
 
-    <section class="panel">
-      <h2>A6000 Roofline 探针</h2><p class="sub">拖动算术强度，观察理论上限何时从带宽受限转为计算受限。</p>
+    <details class="panel tool">
+      <summary><span><strong>A6000 Roofline 探针</strong><br><small class="sub">下钻分析瓶颈从带宽到计算的迁移。</small></span></summary>
+      <div class="tool-body"><p class="sub">拖动算术强度，观察理论上限何时从带宽受限转为计算受限。</p>
       <div class="control"><label for="ai">Arithmetic intensity</label><output id="aiOut">16 FLOP/B</output><input id="ai" type="range" min="1" max="320" value="16"></div>
       <svg id="roofChart" viewBox="0 0 820 340" role="img" aria-label="A6000 Roofline 图"></svg>
-      <div class="limit" id="roofText"></div>
-    </section>
+      <div class="limit" id="roofText"></div></div>
+    </details>
 
-    <section class="panel">
-      <h2>Occupancy 资源计算器</h2><p class="sub">默认复现原文 Kernel 3：37 regs/thread、8192 B SMEM、1024 threads/block。</p>
+    <details class="panel tool">
+      <summary><span><strong>Occupancy 资源计算器</strong><br><small class="sub">下钻检查寄存器、SMEM 与线程资源约束。</small></span></summary>
+      <div class="tool-body"><p class="sub">默认复现原文 Kernel 3：37 regs/thread、8192 B SMEM、1024 threads/block。</p>
       <div class="occupancy">
         <div class="controls">
           <div class="control"><label for="regs">Registers / thread</label><output id="regsOut">37</output><input id="regs" type="range" min="8" max="128" value="37"></div>
@@ -80,11 +87,13 @@
           </div>
           <div class="formula" id="formula"></div>
         </div>
-      </div>
-    </section>
+      </div></div>
+    </details>
+    </aside>
   </div>
 </main>
 <script>
+'use strict';
 const data=[
  {id:1,name:'Naive',g:309,p:1.3,mechanism:'每线程一个 C 元素；A/B 每次 FMA 都从 GMEM 读取。',bottleneck:'非合并访存与极低数据复用。'},
  {id:2,name:'GMEM Coalescing',g:1986.5,p:8.5,mechanism:'交换线程到矩阵坐标的映射，使 warp 访问连续地址。',bottleneck:'带宽由约 15 GB/s 提升到约 110 GB/s，但仍重复读取。'},
@@ -93,7 +102,7 @@ const data=[
  {id:5,name:'2D Blocktiling',g:15971.7,p:68.7,mechanism:'每线程计算 8×8 输出 tile，以 A/B 寄存器向量做 outer product。',bottleneck:'算术强度显著提高，仍存在 memory-pipeline stall。'},
  {id:6,name:'Vectorized Access',g:18237.3,p:78.4,mechanism:'转置 As 并使用 128-bit LDS/LDG，减少访存指令。',bottleneck:'SMEM bank conflict、过高 occupancy 和缺少双缓冲。'},
  {id:9,name:'Autotuning',g:19721,p:84.8,mechanism:'A6000 最佳实测 BM=BN=128、BK=16、TM=TN=8。',bottleneck:'最优参数依赖 GPU 与矩阵形状，不能跨架构照搬。'},
- {id:10,name:'Warptiling',g:21779.3,p:93.7,mechanism:'在 block 与 thread tile 之间显式加入 warp tile。',bottleneck:'大矩阵接近 cuBLAS；小矩阵仍缺少多 kernel dispatch 与 Split-K。'},
+ {id:10,name:'Warp Tiling',g:21779.3,p:93.7,mechanism:'在 block 与 thread tile 之间显式加入 warp tile。',bottleneck:'大矩阵接近 cuBLAS；小矩阵仍缺少多 kernel dispatch 与 Split-K。'},
  {id:0,name:'cuBLAS',g:23249.6,p:100,mechanism:'NVIDIA 多 kernel 库，按 GPU、shape、dtype 运行时选择。',bottleneck:'参考上限；并非单个通用 kernel。'}
 ]; const $=id=>document.getElementById(id);let selected=0;
 function perf(){
@@ -102,10 +111,10 @@ function perf(){
  [0,5000,10000,15000,20000,25000].forEach(v=>{let y=y0-v/max*h;s+=`<line class="gridline" x1="${x0}" y1="${y}" x2="${x0+w}" y2="${y}"/><text class="tick" x="${x0-8}" y="${y+4}" text-anchor="end">${v/1000}T</text>`});
  let pts=data.map((d,i)=>[x0+i*w/(data.length-1),y0-d.g/max*h]);
  s+=`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#2775a7" stroke-width="3"/>`;
- data.forEach((d,i)=>{const [x,y]=pts[i],fill=i===selected?'#90b62d':d.id===0?'#c7831e':'#2775a7';s+=`<circle class="point" data-i="${i}" cx="${x}" cy="${y}" r="${i===selected?8:6}" fill="${fill}"/><text class="tick" x="${x}" y="${y-12}" text-anchor="middle">${(d.g/1000).toFixed(1)}</text><text class="tick" x="${x}" y="${y0+18}" text-anchor="middle">K${d.id}</text>`});
- svg.innerHTML=s;svg.querySelectorAll('.point').forEach(p=>p.onclick=()=>select(+p.dataset.i));
+ data.forEach((d,i)=>{const [x,y]=pts[i],fill=i===selected?'#90b62d':d.id===0?'#c7831e':'#2775a7';s+=`<circle class="point" data-i="${i}" role="button" tabindex="0" aria-label="查看 Kernel ${d.id} ${d.name}" aria-current="${i===selected?'step':'false'}" cx="${x}" cy="${y}" r="${i===selected?8:6}" fill="${fill}"/><text class="tick" x="${x}" y="${y-12}" text-anchor="middle">${(d.g/1000).toFixed(1)}</text><text class="tick" x="${x}" y="${y0+18}" text-anchor="middle">K${d.id}</text>`});
+ svg.innerHTML=s;svg.querySelectorAll('.point').forEach(p=>{const activate=()=>select(+p.dataset.i);p.addEventListener('click',activate);p.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate()}})});
 }
-function select(i){selected=i;const d=data[i];perf();$('stages').innerHTML=data.map((x,j)=>`<div class="stage ${j<i?'done':''} ${j===i?'active':''}" data-i="${j}"><b>K${x.id} ${x.name}</b><span>${(x.g/1000).toFixed(2)} T</span><small>${x.p}% cuBLAS</small></div>`).join('');$('stages').querySelectorAll('.stage').forEach(x=>x.onclick=()=>select(+x.dataset.i));$('kernelCard').style.borderColor=i===8?'var(--amber)':'var(--blue)';$('kernelCard').innerHTML=`<h3>Kernel ${d.id} · ${d.name}</h3><p>${d.mechanism}</p><div class="stats"><div><span>实测吞吐</span><strong>${d.g.toLocaleString()} GFLOPS</strong></div><div><span>相对 cuBLAS</span><strong>${d.p}%</strong></div></div><p class="caution"><b>当前观察：</b>${d.bottleneck}</p>`}
+function select(i){selected=i;const d=data[i];perf();$('stages').innerHTML=data.map((x,j)=>`<button class="stage ${j<i?'done':''} ${j===i?'active':''}" data-i="${j}" aria-current="${j===i?'step':'false'}"><b>K${x.id} ${x.name}</b><span>${(x.g/1000).toFixed(2)} T</span><small>${x.p}% cuBLAS</small></button>`).join('');$('stages').querySelectorAll('.stage').forEach(x=>x.addEventListener('click',()=>select(+x.dataset.i)));$('kernelCard').style.borderColor=i===8?'var(--amber)':'var(--blue)';$('kernelCard').innerHTML=`<h3>Kernel ${d.id} · ${d.name}</h3><p>${d.mechanism}</p><div class="stats"><div><span>实测吞吐</span><strong>${d.g.toLocaleString()} GFLOPS</strong></div><div><span>相对 cuBLAS</span><strong>${d.p}%</strong></div></div><p class="caution"><b>当前观察：</b>${d.bottleneck}</p>`}
 function bounds(){const n=+$('size').value,flops=2*n*n*n+n*n,bytes=4*4*n*n,ct=flops/30e12*1000,mt=bytes/768e9*1000;$('sizeOut').value=n;$('flops').textContent=flops>=1e12?(flops/1e12).toFixed(2)+' TFLOP':(flops/1e9).toFixed(1)+' GFLOP';$('traffic').textContent=(bytes/1e6).toFixed(1)+' MB';$('computeTime').textContent=ct.toFixed(3)+' ms';$('memoryTime').textContent=mt.toFixed(3)+' ms';$('boundText').innerHTML=`<b>理想下界由 ${ct>mt?'计算吞吐':'内存带宽'}主导</b><br>两者下界相差 ${(Math.max(ct,mt)/Math.max(.0001,Math.min(ct,mt))).toFixed(1)}×；实际运行时间不会小于较大者。`}
 function roof(){const ai=+$('ai').value,peak=30000,bw=768,limit=Math.min(peak,bw*ai),ridge=peak/bw;$('aiOut').value=ai+' FLOP/B';const svg=$('roofChart'),x0=62,y0=285,w=700,h=235,x=v=>x0+Math.log10(v)/Math.log10(320)*w,y=v=>y0-Math.log10(Math.max(100,v)/100)/Math.log10(30000/100)*h;
  let s=`<line class="axis" x1="${x0}" y1="35" x2="${x0}" y2="${y0}"/><line class="axis" x1="${x0}" y1="${y0}" x2="${x0+w}" y2="${y0}"/>`;
@@ -113,7 +122,7 @@ function roof(){const ai=+$('ai').value,peak=30000,bw=768,limit=Math.min(peak,bw
  [100,1000,10000,30000].forEach(v=>s+=`<line class="gridline" x1="${x0}" y1="${y(v)}" x2="${x0+w}" y2="${y(v)}"/><text class="tick" x="${x0-8}" y="${y(v)+4}" text-anchor="end">${v/1000}T</text>`);
  const ridgeX=x(ridge),ridgeY=y(peak);s+=`<polyline points="${x(1)},${y(bw)} ${ridgeX},${ridgeY} ${x(320)},${ridgeY}" fill="none" stroke="#c65343" stroke-width="4"/><circle cx="${x(ai)}" cy="${y(limit)}" r="9" fill="#90b62d"/><text x="${x(ai)}" y="${y(limit)-14}" text-anchor="middle" font-weight="800">${(limit/1000).toFixed(1)} T</text><text class="tick" x="${ridgeX}" y="${ridgeY+22}" text-anchor="middle">ridge ${ridge.toFixed(1)} FLOP/B</text>`;svg.innerHTML=s;$('roofText').innerHTML=`<b>${ai<ridge?'带宽受限区':'计算受限区'}</b><br>该算术强度下理论上限为 ${(limit/1000).toFixed(2)} TFLOPS；转折点约 ${ridge.toFixed(1)} FLOP/B。`}
 function occ(){const regs=+$('regs').value,smem=+$('smem').value,t=+$('threads').value,warps=Math.ceil(t/32),rounded=Math.ceil(regs*32/256)*256,regPerBlock=rounded*warps,rb=Math.max(0,Math.floor(65536/regPerBlock)),sb=smem?Math.floor(102400/smem):32,tb=Math.floor(1536/t),blocks=Math.max(0,Math.min(rb,sb,tb,32)),activeWarps=Math.min(48,blocks*warps),o=activeWarps/48*100;$('regsOut').value=regs;$('smemOut').value=smem+' B';$('threadsOut').value=t;$('regBlocks').textContent=rb;$('smemBlocks').textContent=sb;$('threadBlocks').textContent=tb;$('occupancy').textContent=o.toFixed(0)+'%';$('formula').innerHTML=`regs/warp = ceil(<em>${regs}×32</em> / 256) × 256 = ${rounded}<br>regs/block = ${rounded} × ${warps} warps = ${regPerBlock}<br>active blocks = min(${rb}, ${sb}, ${tb}) = <em>${blocks}</em><br>active warps = min(48, ${blocks}×${warps}) = <em>${activeWarps}</em>`}
-['size'].forEach(id=>$(id).oninput=bounds);$('ai').oninput=roof;['regs','smem','threads'].forEach(id=>$(id).oninput=occ);bounds();roof();occ();select(0);
+$('size').addEventListener('input',bounds);$('ai').addEventListener('input',roof);['regs','smem','threads'].forEach(id=>$(id).addEventListener('input',occ));bounds();roof();occ();select(0);
 </script>
 </body>
 </html>

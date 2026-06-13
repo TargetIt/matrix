@@ -1,6 +1,4 @@
-# How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog
-
-> 本文由 NotebookLM `MATRIX 演进跟踪` 来源导出。完整未处理导出见 [`notebooklm-export.md`](notebooklm-export.md)。
+How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog
 
  December 2022 
 

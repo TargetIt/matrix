@@ -28,6 +28,8 @@
     .box b{display:block}.box small{color:var(--muted)}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--cyan);font-size:12px}
     .compare{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}.compare-card{background:var(--panel2);padding:14px}.compare-card h3{margin:0 0 8px}.compare-card strong{font-size:28px;color:var(--green)}.vs{color:var(--muted);font-weight:800}
     .insight{color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.legend{display:flex;gap:14px;color:var(--muted);font-size:12px}.dot{display:inline-block;width:9px;height:9px;margin-right:5px}
+    details.disclosure{padding:0}details.disclosure>summary{list-style:none;cursor:pointer;padding:16px;display:flex;justify-content:space-between;gap:12px;align-items:center}details.disclosure>summary::-webkit-details-marker{display:none}details.disclosure>summary::after{content:"展开";color:var(--green);font-weight:800}details[open].disclosure>summary::after{content:"收起"}details.disclosure>.inside{padding:0 16px 16px;border-top:1px solid var(--line)}
+    .bar:focus{outline:none}.bar:focus rect{stroke:var(--amber);stroke-width:4px}
     @media(max-width:980px){.layout{grid-template-columns:1fr}.rail{grid-template-columns:repeat(2,1fr)}.hero-grid{grid-template-columns:1fr}}
     @media(max-width:620px){header{grid-template-columns:1fr}.facts{text-align:left}.rail{grid-template-columns:1fr}.score,.flow,.compare{grid-template-columns:1fr}.vs{text-align:center}}
   </style>
@@ -37,7 +39,7 @@
   <a class="back" href="../index.html">← MATRIX 可视化入口</a>
   <header>
     <div><div class="tag">Source 02 · NVIDIA_SGEMM_PRACTICE</div><h1>从朴素核到 94.37% cuBLAS</h1><p>逐级观察 shared memory、thread tile、register cache、FLOAT4 与双缓冲如何改变数据复用和吞吐。所有性能值均来自原仓库 README。</p></div>
-    <div class="facts"><b>RTX 3090</b><br>CUDA 10.2 · M=N=K=5120<br><a href="original.md">阅读上游 README</a></div>
+    <div class="facts"><b>RTX 3090</b><br>CUDA 10.2 · M=N=K=5120<br><a href="original.md">阅读上游 README</a> · <a href="SOURCE.md">来源记录</a></div>
   </header>
   <div class="layout">
     <aside class="panel">
@@ -66,27 +68,28 @@
           <p class="insight" id="insight"></p>
         </div>
       </section>
-      <section class="panel">
-        <h2>数据路径</h2><p class="sub">高亮部分表示当前 kernel 已引入的机制。</p>
-        <div class="flow">
+      <details class="panel disclosure">
+        <summary><span><strong>数据路径</strong><br><small class="sub">按需查看当前 kernel 已引入的机制。</small></span></summary>
+        <div class="inside"><div class="flow">
           <div class="box active" data-stage="0"><b>Global Memory</b><small>A/B 完整矩阵</small><div class="code" id="globalCode"></div></div>
           <div class="box" data-stage="1"><b>Shared Memory</b><small>Block tile 协作缓存</small><div class="code">As[BM×BK] · Bs[BK×BN]</div></div>
           <div class="box" data-stage="2"><b>Registers</b><small>Thread tile 与累加器</small><div class="code" id="regCode"></div></div>
           <div class="box" data-stage="3"><b>Vector / Pipeline</b><small>FLOAT4 与双缓存</small><div class="code" id="pipeCode"></div></div>
-        </div>
-      </section>
-      <section class="panel">
-        <h2>任意两级对比</h2><p class="sub">比较性能增益与新增机制，不把相关性误当成单一机制的独立贡献。</p>
-        <div class="compare">
+        </div></div>
+      </details>
+      <details class="panel disclosure">
+        <summary><span><strong>任意两级对比</strong><br><small class="sub">按需比较性能增益与新增机制。</small></span></summary>
+        <div class="inside"><p class="sub">对比只描述两个完整 kernel 的结果差异，不把相关性误当成单一机制的独立贡献。</p><div class="compare">
           <div class="compare-card"><select id="from"></select><h3 id="fromName"></h3><strong id="fromPerf"></strong></div>
           <div class="vs">→</div>
           <div class="compare-card"><select id="to"></select><h3 id="toName"></h3><strong id="toPerf"></strong><p id="compareText"></p></div>
-        </div>
-      </section>
+        </div></div>
+      </details>
     </div>
   </div>
 </main>
 <script>
+'use strict';
 const kernels=[
  {n:1,name:'朴素实现',g:2262.168,p:15.65657,desc:'每线程计算 C 的一个元素。',change:'直接从 GMEM 读取 2K 个输入值。',insight:'同一 A 行与 B 列被大量线程重复读取，低计算访存比无法掩盖数百 cycle 的全局内存延迟。',reuse:[8,0,2],stage:0,code:'1 output / thread'},
  {n:2,name:'共享内存缓存',g:4216.536,p:29.18283,desc:'Block tile 缓存到片上 SMEM。',change:'BM=BN=BK=32 时，原文推导 GMEM 读取约降至 1/32。',insight:'协作加载让同一个 A/B tile 被整个 block 重用，但每线程仍只算一个结果，SMEM 读取压力仍高。',reuse:[68,46,4],stage:1,code:'BM×BN · BK sweep'},
@@ -101,13 +104,13 @@ function drawChart(){
  const svg=$('chart'),max=cublas,w=660,h=240,x0=65,y0=270,bw=62,gap=24;
  let s=`<line class="axis" x1="${x0}" y1="25" x2="${x0}" y2="${y0}"/><line class="axis" x1="${x0}" y1="${y0}" x2="745" y2="${y0}"/>`;
  [0,5000,10000,15000].forEach(v=>{const y=y0-v/max*h;s+=`<line x1="${x0}" y1="${y}" x2="745" y2="${y}" stroke="#26343c"/><text class="label" x="55" y="${y+4}" text-anchor="end">${v/1000}k</text>`});
- kernels.forEach((k,i)=>{const bh=k.g/max*h,x=x0+18+i*(bw+gap),y=y0-bh,fill=i===selected?'#65d482':i<selected?'#51bddd':'#2c3b44';s+=`<g class="bar" data-i="${i}"><rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${fill}"/><text class="value" x="${x+bw/2}" y="${y-7}" text-anchor="middle">${(k.g/1000).toFixed(1)}</text><text class="label" x="${x+bw/2}" y="${y0+20}" text-anchor="middle">K${k.n}</text></g>`});
+ kernels.forEach((k,i)=>{const bh=k.g/max*h,x=x0+18+i*(bw+gap),y=y0-bh,fill=i===selected?'#65d482':i<selected?'#51bddd':'#2c3b44';s+=`<g class="bar" data-i="${i}" role="button" tabindex="0" aria-label="查看 Kernel ${k.n} ${k.name}" aria-current="${i===selected?'step':'false'}"><rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${fill}"/><text class="value" x="${x+bw/2}" y="${y-7}" text-anchor="middle">${(k.g/1000).toFixed(1)}</text><text class="label" x="${x+bw/2}" y="${y0+20}" text-anchor="middle">K${k.n}</text></g>`});
  const cy=y0-cublas/max*h;s+=`<line x1="${x0}" y1="${cy}" x2="745" y2="${cy}" stroke="#e8b44d" stroke-dasharray="6 5"/><text x="742" y="${cy-7}" text-anchor="end" fill="#e8b44d" font-size="11">cuBLAS 14.45 TFLOPS</text>`;
- svg.innerHTML=s;svg.querySelectorAll('.bar').forEach(b=>b.onclick=()=>select(+b.dataset.i));
+ svg.innerHTML=s;svg.querySelectorAll('.bar').forEach(b=>{const activate=()=>select(+b.dataset.i);b.addEventListener('click',activate);b.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate()}})});
 }
 function renderSteps(){
- $('steps').innerHTML=kernels.map((k,i)=>`<button class="step ${i===selected?'active':''}" data-i="${i}"><span class="num">${k.n}</span><span><b>${k.name}</b><small>${k.desc}</small></span><output>${k.p.toFixed(1)}%</output></button>`).join('');
- $('steps').querySelectorAll('.step').forEach(b=>b.onclick=()=>select(+b.dataset.i));
+ $('steps').innerHTML=kernels.map((k,i)=>`<button class="step ${i===selected?'active':''}" data-i="${i}" aria-current="${i===selected?'step':'false'}"><span class="num">${k.n}</span><span><b>${k.name}</b><small>${k.desc}</small></span><output>${k.p.toFixed(1)}%</output></button>`).join('');
+ $('steps').querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>select(+b.dataset.i)));
 }
 function select(i){selected=i;const k=kernels[i],prev=i?kernels[i-1]:null;renderSteps();drawChart();
  $('title').textContent=`Kernel ${k.n} · ${k.name}`;$('summary').textContent=k.desc;$('gflops').textContent=`${(k.g/1000).toFixed(2)} T`;
@@ -117,9 +120,9 @@ function select(i){selected=i;const k=kernels[i],prev=i?kernels[i-1]:null;render
 }
 function options(){return kernels.map((k,i)=>`<option value="${i}">K${k.n} ${k.name}</option>`).join('')}
 function compare(){const a=kernels[+$('from').value],b=kernels[+$('to').value];$('fromName').textContent=a.name;$('toName').textContent=b.name;$('fromPerf').textContent=`${(a.g/1000).toFixed(2)} T`;$('toPerf').textContent=`${(b.g/1000).toFixed(2)} T`;$('compareText').textContent=`吞吐 ${b.g>=a.g?'提升':'下降'} ${Math.abs((b.g/a.g-1)*100).toFixed(1)}%；cuBLAS 达成率变化 ${(b.p-a.p).toFixed(1)} pp。`}
-$('from').innerHTML=options();$('to').innerHTML=options();$('from').value=0;$('to').value=6;$('from').onchange=compare;$('to').onchange=compare;
-$('play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ 自动演进';return}$('play').textContent='Ⅱ 暂停';timer=setInterval(()=>select((selected+1)%kernels.length),1600)};
-$('reset').onclick=()=>select(0);compare();select(0);
+$('from').innerHTML=options();$('to').innerHTML=options();$('from').value=0;$('to').value=6;$('from').addEventListener('change',compare);$('to').addEventListener('change',compare);
+$('play').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ 自动演进';return}$('play').textContent='Ⅱ 暂停';timer=setInterval(()=>select((selected+1)%kernels.length),1600)});
+$('reset').addEventListener('click',()=>select(0));compare();select(0);
 </script>
 </body>
 </html>
