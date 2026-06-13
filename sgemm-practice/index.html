@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>NVIDIA SGEMM Practice 优化阶梯</title>
+  <style>
+    :root{--bg:#0b1116;--panel:#131c23;--panel2:#18242d;--ink:#eef5f7;--muted:#93a5ae;--line:#2c3b44;--green:#65d482;--cyan:#51bddd;--amber:#e8b44d;--red:#e86f61}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
+    button,select{font:inherit}.shell{width:min(1320px,calc(100% - 30px));margin:auto;padding:22px 0 60px}
+    a{color:var(--green)}.back{text-decoration:none;font-weight:750}
+    header{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;border-bottom:1px solid var(--line);padding:12px 0 20px}
+    h1{font-size:clamp(28px,4.4vw,54px);line-height:1.02;letter-spacing:0;margin:8px 0}.tag{color:var(--green);font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+    header p{color:var(--muted);max-width:780px;margin:0}.facts{text-align:right;color:var(--muted)}.facts b{color:var(--ink)}
+    .layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);padding:16px}
+    .rail{display:grid;gap:7px}.step{display:grid;grid-template-columns:33px 1fr auto;gap:9px;align-items:center;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--ink);padding:10px;cursor:pointer}
+    .step:hover{background:var(--panel2)}.step.active{border-color:var(--green);background:#162b21}.num{display:grid;place-items:center;width:29px;height:29px;border:1px solid var(--line);color:var(--muted)}
+    .step b{font-size:13px}.step small{display:block;color:var(--muted)}.step output{font-size:12px;color:var(--green)}
+    .rail-actions{display:flex;gap:8px;margin-bottom:9px}.rail-actions button,.compare select{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 10px;cursor:pointer}
+    .content{display:grid;gap:16px}.hero-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:16px}
+    .panel h2{margin:0;font-size:20px}.sub{color:var(--muted);font-size:13px;margin:3px 0 14px}
+    #chart{width:100%;height:330px;display:block}.bar{cursor:pointer}.axis{stroke:#43535d}.label{fill:var(--muted);font-size:11px}.value{fill:var(--ink);font-weight:800;font-size:12px}
+    .score{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:var(--panel2);border-top:3px solid var(--green);padding:12px}.metric span{color:var(--muted);font-size:12px;display:block}.metric b{font-size:25px}
+    .delta{margin-top:10px;border-left:4px solid var(--amber);padding:12px;background:#2a2417}.delta b{display:block;color:var(--amber)}
+    .memory{margin-top:12px;display:grid;gap:7px}.lane{display:grid;grid-template-columns:82px 1fr 48px;gap:8px;align-items:center}.track{height:12px;background:#25323a;overflow:hidden}.fill{height:100%;transition:width .35s}.lane small{color:var(--muted)}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.box{border:1px solid var(--line);background:var(--panel2);padding:12px;min-height:92px;position:relative}.box.active{border-color:var(--cyan)}.box.active::after{content:"";height:3px;position:absolute;left:0;bottom:0;background:var(--cyan);animation:load 1.4s linear infinite}@keyframes load{from{width:0}to{width:100%}}
+    .box b{display:block}.box small{color:var(--muted)}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--cyan);font-size:12px}
+    .compare{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}.compare-card{background:var(--panel2);padding:14px}.compare-card h3{margin:0 0 8px}.compare-card strong{font-size:28px;color:var(--green)}.vs{color:var(--muted);font-weight:800}
+    .insight{color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.legend{display:flex;gap:14px;color:var(--muted);font-size:12px}.dot{display:inline-block;width:9px;height:9px;margin-right:5px}
+    @media(max-width:980px){.layout{grid-template-columns:1fr}.rail{grid-template-columns:repeat(2,1fr)}.hero-grid{grid-template-columns:1fr}}
+    @media(max-width:620px){header{grid-template-columns:1fr}.facts{text-align:left}.rail{grid-template-columns:1fr}.score,.flow,.compare{grid-template-columns:1fr}.vs{text-align:center}}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <a class="back" href="../index.html">← MATRIX 可视化入口</a>
+  <header>
+    <div><div class="tag">Source 02 · NVIDIA_SGEMM_PRACTICE</div><h1>从朴素核到 94.37% cuBLAS</h1><p>逐级观察 shared memory、thread tile、register cache、FLOAT4 与双缓冲如何改变数据复用和吞吐。所有性能值均来自原仓库 README。</p></div>
+    <div class="facts"><b>RTX 3090</b><br>CUDA 10.2 · M=N=K=5120<br><a href="original.md">阅读上游 README</a></div>
+  </header>
+  <div class="layout">
+    <aside class="panel">
+      <div class="rail-actions"><button id="play">▶ 自动演进</button><button id="reset">↺ 朴素核</button></div>
+      <nav class="rail" id="steps" aria-label="SGEMM 优化步骤"></nav>
+    </aside>
+    <div class="content">
+      <section class="hero-grid">
+        <div class="panel">
+          <h2>实测性能阶梯</h2><p class="sub">点击柱形或左侧步骤，定位一次具体优化。</p>
+          <svg id="chart" viewBox="0 0 760 330" role="img" aria-label="七个 SGEMM kernel 的 GFLOPS 柱状图"></svg>
+          <div class="legend"><span><i class="dot" style="background:var(--green)"></i>当前 kernel</span><span><i class="dot" style="background:var(--cyan)"></i>历史 kernel</span><span><i class="dot" style="background:var(--line)"></i>尚未展开</span></div>
+        </div>
+        <div class="panel">
+          <h2 id="title">Kernel 1 · 朴素实现</h2><p class="sub" id="summary"></p>
+          <div class="score">
+            <div class="metric"><span>吞吐</span><b id="gflops"></b></div>
+            <div class="metric"><span>相对 cuBLAS</span><b id="ratio"></b></div>
+          </div>
+          <div class="delta"><b id="gain"></b><span id="change"></span></div>
+          <div class="memory">
+            <div class="lane"><small>GMEM 复用</small><div class="track"><div class="fill" id="gmemBar" style="background:var(--red)"></div></div><output id="gmemOut"></output></div>
+            <div class="lane"><small>SMEM 复用</small><div class="track"><div class="fill" id="smemBar" style="background:var(--cyan)"></div></div><output id="smemOut"></output></div>
+            <div class="lane"><small>寄存器复用</small><div class="track"><div class="fill" id="regBar" style="background:var(--green)"></div></div><output id="regOut"></output></div>
+          </div>
+          <p class="insight" id="insight"></p>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>数据路径</h2><p class="sub">高亮部分表示当前 kernel 已引入的机制。</p>
+        <div class="flow">
+          <div class="box active" data-stage="0"><b>Global Memory</b><small>A/B 完整矩阵</small><div class="code" id="globalCode"></div></div>
+          <div class="box" data-stage="1"><b>Shared Memory</b><small>Block tile 协作缓存</small><div class="code">As[BM×BK] · Bs[BK×BN]</div></div>
+          <div class="box" data-stage="2"><b>Registers</b><small>Thread tile 与累加器</small><div class="code" id="regCode"></div></div>
+          <div class="box" data-stage="3"><b>Vector / Pipeline</b><small>FLOAT4 与双缓存</small><div class="code" id="pipeCode"></div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>任意两级对比</h2><p class="sub">比较性能增益与新增机制，不把相关性误当成单一机制的独立贡献。</p>
+        <div class="compare">
+          <div class="compare-card"><select id="from"></select><h3 id="fromName"></h3><strong id="fromPerf"></strong></div>
+          <div class="vs">→</div>
+          <div class="compare-card"><select id="to"></select><h3 id="toName"></h3><strong id="toPerf"></strong><p id="compareText"></p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+const kernels=[
+ {n:1,name:'朴素实现',g:2262.168,p:15.65657,desc:'每线程计算 C 的一个元素。',change:'直接从 GMEM 读取 2K 个输入值。',insight:'同一 A 行与 B 列被大量线程重复读取，低计算访存比无法掩盖数百 cycle 的全局内存延迟。',reuse:[8,0,2],stage:0,code:'1 output / thread'},
+ {n:2,name:'共享内存缓存',g:4216.536,p:29.18283,desc:'Block tile 缓存到片上 SMEM。',change:'BM=BN=BK=32 时，原文推导 GMEM 读取约降至 1/32。',insight:'协作加载让同一个 A/B tile 被整个 block 重用，但每线程仍只算一个结果，SMEM 读取压力仍高。',reuse:[68,46,4],stage:1,code:'BM×BN · BK sweep'},
+ {n:3,name:'一维 Thread Tile',g:7809.629,p:54.05078,desc:'每线程沿 M 方向计算多个输出。',change:'扩大 BM/BN、减小 BK，并用寄存器保存多个 partial sum。',insight:'一个 B 值可服务多个输出 FMA，减少重复 SMEM load；tile 不能无限增大，否则并发 block 与 occupancy 会下降。',reuse:[72,65,38],stage:2,code:'TM outputs / thread'},
+ {n:4,name:'二维 Thread Tile',g:12251.3,p:84.79179,desc:'每线程计算二维输出小块。',change:'A/B 寄存器片段形成小型 outer product。',insight:'二维 tile 同时复用 A 与 B，比一维 tile 更充分地提高每次 SMEM 读取对应的 FMA 数量。',reuse:[76,82,72],stage:2,code:'TM×TN outputs / thread'},
+ {n:5,name:'寄存器缓存',g:12177.95,p:84.28412,desc:'显式缓存 A/B fragment。',change:'将反复使用的标量保留在 register file。',insight:'该实测点略低于 kernel 4，说明“加入一种优化”不保证孤立地提升性能；寄存器压力与指令调度也会改变。',reuse:[76,84,88],stage:2,code:'reg_a[TM] · reg_b[TN]'},
+ {n:6,name:'FLOAT4 向量访存',g:13161.49,p:91.09125,desc:'128-bit 对齐向量化加载。',change:'一次指令搬运 4 个 FP32，降低内存指令数量。',insight:'向量访存依赖地址对齐；它改善事务和指令效率，但不能替代前面已经建立的数据复用层级。',reuse:[88,85,90],stage:3,code:'float4 · 128-bit'},
+ {n:7,name:'双缓存预取',g:13634.98,p:94.36832,desc:'加载下一 tile 与当前计算重叠。',change:'Ping-pong buffer 隐藏 GMEM→SMEM 延迟。',insight:'最终核达到 cuBLAS 的 94.37%。双缓存用更多片上容量换流水并行，适合已有高复用、计算时间足够覆盖加载的主循环。',reuse:[92,91,94],stage:3,code:'load(k+1) ∥ compute(k)'}
+];
+const cublas=14448.69,$=id=>document.getElementById(id);let selected=0,timer=null;
+function drawChart(){
+ const svg=$('chart'),max=cublas,w=660,h=240,x0=65,y0=270,bw=62,gap=24;
+ let s=`<line class="axis" x1="${x0}" y1="25" x2="${x0}" y2="${y0}"/><line class="axis" x1="${x0}" y1="${y0}" x2="745" y2="${y0}"/>`;
+ [0,5000,10000,15000].forEach(v=>{const y=y0-v/max*h;s+=`<line x1="${x0}" y1="${y}" x2="745" y2="${y}" stroke="#26343c"/><text class="label" x="55" y="${y+4}" text-anchor="end">${v/1000}k</text>`});
+ kernels.forEach((k,i)=>{const bh=k.g/max*h,x=x0+18+i*(bw+gap),y=y0-bh,fill=i===selected?'#65d482':i<selected?'#51bddd':'#2c3b44';s+=`<g class="bar" data-i="${i}"><rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${fill}"/><text class="value" x="${x+bw/2}" y="${y-7}" text-anchor="middle">${(k.g/1000).toFixed(1)}</text><text class="label" x="${x+bw/2}" y="${y0+20}" text-anchor="middle">K${k.n}</text></g>`});
+ const cy=y0-cublas/max*h;s+=`<line x1="${x0}" y1="${cy}" x2="745" y2="${cy}" stroke="#e8b44d" stroke-dasharray="6 5"/><text x="742" y="${cy-7}" text-anchor="end" fill="#e8b44d" font-size="11">cuBLAS 14.45 TFLOPS</text>`;
+ svg.innerHTML=s;svg.querySelectorAll('.bar').forEach(b=>b.onclick=()=>select(+b.dataset.i));
+}
+function renderSteps(){
+ $('steps').innerHTML=kernels.map((k,i)=>`<button class="step ${i===selected?'active':''}" data-i="${i}"><span class="num">${k.n}</span><span><b>${k.name}</b><small>${k.desc}</small></span><output>${k.p.toFixed(1)}%</output></button>`).join('');
+ $('steps').querySelectorAll('.step').forEach(b=>b.onclick=()=>select(+b.dataset.i));
+}
+function select(i){selected=i;const k=kernels[i],prev=i?kernels[i-1]:null;renderSteps();drawChart();
+ $('title').textContent=`Kernel ${k.n} · ${k.name}`;$('summary').textContent=k.desc;$('gflops').textContent=`${(k.g/1000).toFixed(2)} T`;
+ $('ratio').textContent=`${k.p.toFixed(2)}%`;$('gain').textContent=prev?`较上一级 ${(k.g/prev.g).toFixed(2)}×`:'性能基线';$('change').textContent=k.change;$('insight').textContent=k.insight;
+ ['gmem','smem','reg'].forEach((n,j)=>{$(n+'Bar').style.width=k.reuse[j]+'%';$(n+'Out').textContent=k.reuse[j]+'%'});
+ document.querySelectorAll('.box').forEach((b,j)=>b.classList.toggle('active',j<=k.stage));$('globalCode').textContent=i===0?'2 GMEM loads / FMA':'cooperative tile loads';$('regCode').textContent=i<2?'scalar accumulator':k.code;$('pipeCode').textContent=i<5?'尚未引入':k.code;
+}
+function options(){return kernels.map((k,i)=>`<option value="${i}">K${k.n} ${k.name}</option>`).join('')}
+function compare(){const a=kernels[+$('from').value],b=kernels[+$('to').value];$('fromName').textContent=a.name;$('toName').textContent=b.name;$('fromPerf').textContent=`${(a.g/1000).toFixed(2)} T`;$('toPerf').textContent=`${(b.g/1000).toFixed(2)} T`;$('compareText').textContent=`吞吐 ${b.g>=a.g?'提升':'下降'} ${Math.abs((b.g/a.g-1)*100).toFixed(1)}%；cuBLAS 达成率变化 ${(b.p-a.p).toFixed(1)} pp。`}
+$('from').innerHTML=options();$('to').innerHTML=options();$('from').value=0;$('to').value=6;$('from').onchange=compare;$('to').onchange=compare;
+$('play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ 自动演进';return}$('play').textContent='Ⅱ 暂停';timer=setInterval(()=>select((selected+1)%kernels.length),1600)};
+$('reset').onclick=()=>select(0);compare();select(0);
+</script>
+</body>
+</html>

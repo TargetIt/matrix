@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>CUTLASS GEMM 层级可视化</title>
+  <style>
+    :root {
+      --bg:#f3f6f8; --surface:#fff; --ink:#14212b; --muted:#5e6c76;
+      --line:#d8e0e5; --gmem:#d94f4f; --smem:#2878b8; --warp:#7755b7;
+      --reg:#138a65; --math:#d28a18; --shadow:0 10px 28px rgba(27,44,55,.09);
+    }
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;font:15px/1.55 Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+    button,input{font:inherit} button{cursor:pointer}
+    .shell{width:min(1280px,calc(100% - 32px));margin:auto;padding:24px 0 60px}
+    header{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line);padding-bottom:18px}
+    h1{font-size:clamp(28px,4vw,52px);line-height:1.03;margin:5px 0 8px;letter-spacing:0}
+    h2,h3,p{margin-top:0} .eyebrow{font-weight:800;color:var(--smem);letter-spacing:.08em;text-transform:uppercase}
+    .lede{max-width:760px;color:var(--muted);margin:0}
+    .source{color:var(--muted);white-space:nowrap}.source a{color:var(--ink)}
+    .toolbar{display:grid;grid-template-columns:repeat(6,minmax(105px,1fr));gap:10px;margin:22px 0}
+    .control{background:var(--surface);border:1px solid var(--line);padding:10px 12px}
+    .control label{font-size:12px;color:var(--muted);display:block}.control output{font-weight:800;font-size:18px}
+    .control input{width:100%;accent-color:var(--smem)}
+    .toggle{display:flex;align-items:center;justify-content:center;gap:9px;font-weight:700;background:var(--surface);border:1px solid var(--line)}
+    .toggle input{width:18px;height:18px;accent-color:var(--reg)}
+    .grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.7fr);gap:18px}
+    .panel{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);padding:18px}
+    .panel-head{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:14px}
+    .panel-head h2{margin:0;font-size:20px}.panel-head p{color:var(--muted);margin:3px 0 0;font-size:13px}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap}.tabs button{border:1px solid var(--line);background:#f7f9fa;padding:7px 10px}
+    .tabs button.active{background:var(--ink);border-color:var(--ink);color:white}
+    #hierarchy{width:100%;height:auto;display:block;background:#f8fafb;border:1px solid var(--line)}
+    .node{cursor:pointer;transition:opacity .2s}.node:hover{filter:brightness(.97)}
+    .node-label{font-weight:800;pointer-events:none}.node-sub{font-size:12px;fill:var(--muted);pointer-events:none}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .metric{border-top:4px solid var(--smem);background:#f7f9fa;padding:12px;min-height:92px}
+    .metric b{font-size:24px;display:block}.metric span{color:var(--muted);font-size:12px}
+    .detail{margin-top:12px;border-left:4px solid var(--warp);background:#f5f2fb;padding:13px 14px}
+    .detail h3{margin:0 0 5px}.detail p{margin:0;color:var(--muted)}
+    .pipeline{margin-top:18px}.stages{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .stage{position:relative;border:1px solid var(--line);padding:12px;min-height:94px;background:#fafbfc;overflow:hidden}
+    .stage b{display:block}.stage small{color:var(--muted)}
+    .stage::after{content:"";position:absolute;left:0;bottom:0;height:5px;width:0;background:var(--math)}
+    .stage.active::after{animation:flow 1.8s linear infinite}
+    @keyframes flow{to{width:100%}}
+    .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;color:var(--muted);font-size:12px}
+    .legend i{width:10px;height:10px;display:inline-block;margin-right:5px}
+    .notes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
+    .note{border-top:1px solid var(--line);padding-top:12px}.note strong{display:block;margin-bottom:4px}.note p{color:var(--muted);margin:0}
+    .back{display:inline-block;color:var(--ink);text-decoration:none;font-weight:700;margin-bottom:10px}
+    @media(max-width:900px){header{display:block}.source{margin-top:12px}.toolbar{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.notes{grid-template-columns:1fr}}
+    @media(max-width:560px){.shell{width:min(100% - 20px,1280px);padding-top:12px}.toolbar{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr}.stages{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <a class="back" href="../index.html">← MATRIX 可视化入口</a>
+  <header>
+    <div>
+      <div class="eyebrow">Source 01 · NVIDIA Technical Blog</div>
+      <h1>CUTLASS：GEMM 层级如何映射到 GPU</h1>
+      <p class="lede">从矩阵问题逐层进入 thread block、warp 与 thread。尺寸、复用、存储和流水线均由原文中的 CUTLASS policy 参数实时计算。</p>
+    </div>
+    <div class="source"><a href="original.md">阅读原文</a><br>默认 policy：128×32×8</div>
+  </header>
+
+  <section class="toolbar" aria-label="CUTLASS policy 参数">
+    <div class="control"><label for="bm">Block M</label><output id="bmOut">128</output><input id="bm" type="range" min="32" max="256" step="32" value="128"></div>
+    <div class="control"><label for="bn">Block N</label><output id="bnOut">32</output><input id="bn" type="range" min="16" max="128" step="16" value="32"></div>
+    <div class="control"><label for="bk">Block K</label><output id="bkOut">8</output><input id="bk" type="range" min="4" max="32" step="4" value="8"></div>
+    <div class="control"><label for="tm">Thread M</label><output id="tmOut">8</output><input id="tm" type="range" min="2" max="16" step="2" value="8"></div>
+    <div class="control"><label for="tn">Thread N</label><output id="tnOut">4</output><input id="tn" type="range" min="2" max="16" step="2" value="4"></div>
+    <label class="toggle"><input id="doubleBuffer" type="checkbox" checked>双缓冲</label>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-head">
+        <div><h2>层级下钻</h2><p>点击任意层级查看数据归属与复用边界。</p></div>
+        <div class="tabs" id="tabs"></div>
+      </div>
+      <svg id="hierarchy" viewBox="0 0 820 500" role="img" aria-label="CUTLASS GEMM 层级结构"></svg>
+      <div class="legend">
+        <span><i style="background:var(--gmem)"></i>Global memory</span>
+        <span><i style="background:var(--smem)"></i>Shared memory</span>
+        <span><i style="background:var(--warp)"></i>Warp partition</span>
+        <span><i style="background:var(--reg)"></i>Register accumulator</span>
+      </div>
+    </div>
+    <aside class="panel">
+      <div class="panel-head"><div><h2>当前 policy</h2><p>估算以 FP32、每 block 为单位。</p></div></div>
+      <div class="metrics">
+        <div class="metric"><span>输出元素 / block</span><b id="outputs">4,096</b></div>
+        <div class="metric" style="border-color:var(--reg)"><span>输出元素 / thread</span><b id="perThread">32</b></div>
+        <div class="metric" style="border-color:var(--gmem)"><span>GMEM→SMEM 数据</span><b id="gmemBytes">5.0 KiB</b></div>
+        <div class="metric" style="border-color:var(--warp)"><span>理论线程数</span><b id="threads">128</b></div>
+        <div class="metric" style="border-color:var(--math)"><span>tile 算术强度</span><b id="intensity">12.8</b></div>
+        <div class="metric" style="border-color:var(--smem)"><span>SMEM 占用</span><b id="smem">10.0 KiB</b></div>
+      </div>
+      <div class="detail" id="detail" aria-live="polite"></div>
+      <div class="pipeline">
+        <div class="panel-head"><div><h2>主循环流水</h2><p>双缓冲开启时，三条指令流重叠。</p></div></div>
+        <div class="stages">
+          <div class="stage active"><b>GMEM → SMEM</b><small>加载下一个 A/B tile</small></div>
+          <div class="stage active"><b>SMEM → RF</b><small>warp 取下一组 fragment</small></div>
+          <div class="stage active"><b>RF → Math</b><small>当前 outer product</small></div>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="notes">
+    <article class="note"><strong>层级与存储一致</strong><p>Block tile 对应 shared memory，warp/thread accumulator 对应 register file；越靠近计算单元，容量越小、复用越密集。</p></article>
+    <article class="note"><strong>更大 tile 并非总是更快</strong><p>tile 增大提升数据复用，也增加 SMEM 与寄存器压力，可能减少一个 SM 上的并发 block 数。</p></article>
+    <article class="note"><strong>Epilogue 是融合入口</strong><p>CUTLASS 可将 bias、ReLU 等逐元素操作放进 epilogue，避免额外 kernel launch 和一次 GMEM 往返。</p></article>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const controls=['bm','bn','bk','tm','tn'];
+const levels=[
+  {id:'problem',label:'GEMM Problem',sub:'完整 M×N×K',color:'#d94f4f',desc:'完整矩阵驻留在 global memory。Grid 将输出矩阵 C 划分为多个独立的 thread block tile。'},
+  {id:'block',label:'Thread Block Tile',sub:'GMEM → SMEM',color:'#2878b8',desc:'一个 block 沿 K 维迭代加载 A/B tile，协作写入 shared memory，并累计自己的 C 子矩阵。'},
+  {id:'warp',label:'Warp Tile',sub:'SMEM → Registers',color:'#7755b7',desc:'warp 从 shared memory 取 fragment。同行 warp 共享 A，列方向 warp 共享 B，累加器保存在寄存器。'},
+  {id:'thread',label:'Thread Tile',sub:'Register outer product',color:'#138a65',desc:'每个线程持有 A、B 小向量和自己的二维 accumulator，以 outer product 形式执行多个独立 FMA。'}
+];
+let selected=1;
+
+function fmtBytes(n){return n>=1024?`${(n/1024).toFixed(1)} KiB`:`${n} B`}
+function values(){return Object.fromEntries(controls.map(k=>[k,+$(k).value]))}
+function renderTabs(){
+  $('tabs').innerHTML=levels.map((l,i)=>`<button class="${i===selected?'active':''}" data-i="${i}">${l.label}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{selected=+b.dataset.i;render()});
+}
+function renderSvg(v){
+  const svg=$('hierarchy'), centerX=410;
+  const widths=[730,570,400,230], heights=[420,310,205,110];
+  let html='<defs><filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-opacity=".12"/></filter></defs>';
+  levels.forEach((l,i)=>{
+    const w=widths[i],h=heights[i],x=centerX-w/2,y=38+i*48;
+    const active=i===selected, opacity=i>selected?.22:1;
+    html+=`<g class="node" data-i="${i}" opacity="${opacity}">
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${active?l.color+'18':'#fff'}" stroke="${l.color}" stroke-width="${active?4:2}" filter="url(#shadow)"/>
+      <text x="${x+18}" y="${y+29}" class="node-label" fill="${l.color}">${l.label}</text>
+      <text x="${x+18}" y="${y+49}" class="node-sub">${l.sub}</text>
+    </g>`;
+  });
+  const blockY=86, blockW=570, cellW=Math.max(24,blockW/(v.bn/16));
+  html+=`<g opacity="${selected>=1?1:.18}"><text x="410" y="130" text-anchor="middle" font-weight="800">C tile ${v.bm} × ${v.bn}</text>`;
+  for(let x=126;x<694;x+=cellW) html+=`<line x1="${x}" y1="145" x2="${x}" y2="360" stroke="#2878b833"/>`;
+  for(let y=145;y<=360;y+=43) html+=`<line x1="125" y1="${y}" x2="695" y2="${y}" stroke="#2878b833"/>`;
+  html+=`</g>`;
+  const tx=Math.min(16,v.tn)*8,ty=Math.min(16,v.tm)*5;
+  html+=`<g opacity="${selected>=2?1:.2}"><rect x="310" y="185" width="200" height="128" fill="#7755b722" stroke="#7755b7" stroke-width="2"/><text x="410" y="210" text-anchor="middle" fill="#7755b7" font-weight="800">Warp partition</text>
+  <rect x="${410-tx/2}" y="${245-ty/2}" width="${tx}" height="${ty}" fill="#138a6540" stroke="#138a65" stroke-width="3"/><text x="410" y="252" text-anchor="middle" fill="#0f654d" font-weight="800">${v.tm}×${v.tn} / thread</text></g>`;
+  svg.innerHTML=html;
+  svg.querySelectorAll('.node').forEach(n=>n.onclick=()=>{selected=+n.dataset.i;render()});
+}
+function render(){
+  const v=values(); controls.forEach(k=>$(k+'Out').value=v[k]);
+  const outputs=v.bm*v.bn, perThread=v.tm*v.tn;
+  const threads=Math.ceil(outputs/perThread), inputFloats=(v.bm+v.bn)*v.bk;
+  const baseSmem=inputFloats*4, smem=baseSmem*($('doubleBuffer').checked?2:1);
+  const flops=2*v.bm*v.bn*v.bk, bytes=(inputFloats+v.bm*v.bn)*4;
+  $('outputs').textContent=outputs.toLocaleString();
+  $('perThread').textContent=perThread.toLocaleString();
+  $('gmemBytes').textContent=fmtBytes(baseSmem);
+  $('threads').textContent=threads.toLocaleString();
+  $('intensity').textContent=(flops/bytes).toFixed(1);
+  $('smem').textContent=fmtBytes(smem);
+  const l=levels[selected];
+  $('detail').style.borderColor=l.color;
+  $('detail').innerHTML=`<h3 style="color:${l.color}">${l.label}</h3><p>${l.desc}</p>`;
+  document.querySelectorAll('.stage').forEach(s=>s.classList.toggle('active',$('doubleBuffer').checked));
+  renderTabs();renderSvg(v);
+}
+controls.forEach(k=>$(k).addEventListener('input',render));
+$('doubleBuffer').addEventListener('change',render);
+render();
+</script>
+</body>
+</html>

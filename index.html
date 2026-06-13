@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
   <title>CUDA矩阵乘法(SGEMM)终极优化：交互式可视化教程</title>
   <style>
     :root {
@@ -269,9 +270,9 @@
         <div class="outline-card">
           <p class="mini-title">本轮交付范围</p>
           <div class="metric-grid">
-            <div class="metric"><b>3</b><span>独立可运行 HTML 演示</span></div>
-            <div class="metric"><b>2</b><span>已展开的优化步骤</span></div>
-            <div class="metric"><b>5</b><span>完整教程总步骤</span></div>
+            <div class="metric"><b>6</b><span>独立可运行 HTML 演示</span></div>
+            <div class="metric"><b>3</b><span>高价值来源专题</span></div>
+            <div class="metric"><b>3</b><span>原有基础演示</span></div>
           </div>
         </div>
         <div class="chart-card">
@@ -282,6 +283,40 @@
             <div class="bar-row"><span>SMEM + Block Tiling</span><div class="bar-track"><div class="bar-fill" data-width="56"></div></div><strong>~56%</strong></div>
             <div class="bar-row"><span>Vectorized Load</span><div class="bar-track"><div class="bar-fill" data-width="70"></div></div><strong>~70%</strong></div>
             <div class="bar-row"><span>Warp / CUTLASS Hierarchy</span><div class="bar-track"><div class="bar-fill" data-width="88"></div></div><strong>~88%</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>三篇高价值来源：独立交互可视化</h2>
+      <p>以下专题分别保留 NotebookLM 来源原文，并依据文章中的真实参数、性能数据和资源约束构成交互。三个页面关注不同分析层次，避免重复讲解。</p>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <p class="mini-title">Source 01 · CUTLASS</p>
+          <h3>GEMM 层级与流水线</h3>
+          <p>下钻 Thread Block → Warp → Thread tile，实时调节 policy 参数，观察复用、SMEM 占用和双缓冲流水。</p>
+          <div class="actions">
+            <a class="button" href="./cutlass-hierarchy/index.html">打开可视化</a>
+            <a class="button" href="./cutlass-hierarchy/original.md">查看原文</a>
+          </div>
+        </div>
+        <div class="demo-card">
+          <p class="mini-title">Source 02 · SGEMM Practice</p>
+          <h3>RTX 3090 七级优化阶梯</h3>
+          <p>从 2.26 到 13.63 TFLOPS，逐级比较 SMEM、thread tile、寄存器、FLOAT4 与双缓存的作用。</p>
+          <div class="actions">
+            <a class="button" href="./sgemm-practice/index.html">打开可视化</a>
+            <a class="button" href="./sgemm-practice/original.md">查看原文</a>
+          </div>
+        </div>
+        <div class="demo-card">
+          <p class="mini-title">Source 03 · CUDA MMM Worklog</p>
+          <h3>A6000 性能与瓶颈实验室</h3>
+          <p>查看 309 GFLOPS 到 21.78 TFLOPS 的演进，并使用 Roofline、计算下界和 occupancy 资源计算器。</p>
+          <div class="actions">
+            <a class="button" href="./cuda-matmul-worklog/index.html">打开可视化</a>
+            <a class="button" href="./cuda-matmul-worklog/original.md">查看原文</a>
           </div>
         </div>
       </div>
