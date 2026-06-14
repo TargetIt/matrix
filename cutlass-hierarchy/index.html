@@ -94,7 +94,7 @@
       </div>
     </div>
     <aside class="panel">
-      <div class="panel-head"><div><h2>当前 policy</h2><p>估算以 FP32、每 block 为单位。</p></div></div>
+      <div class="panel-head"><div><h2>当前 policy</h2><p>估算以 FP32、每 block 为单位；SMEM 仅计 A/B 输入 tile 与双缓冲，不含实现相关的输出或 epilogue scratch。</p></div></div>
       <div class="metrics">
         <div class="metric"><span>输出元素 / block</span><b id="outputs">4,096</b></div>
         <div class="metric" style="border-color:var(--reg)"><span>输出元素 / thread</span><b id="perThread">32</b></div>
