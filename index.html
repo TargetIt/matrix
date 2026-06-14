@@ -341,17 +341,17 @@
           <p>让 warp 的地址更连续，减少实际搬运字节浪费，是后续所有优化的入口。</p>
         </div>
         <div class="step-card">
-          <small>步骤 3（下一轮）</small>
+          <small>步骤 3（未完成，已登记）</small>
           <strong>Shared Memory Caching &amp; Block Tiling</strong>
           <p>把 A/B 的 tile 暂存到 SMEM，显著提升数据复用，减少重复的 GMEM 读取。</p>
         </div>
         <div class="step-card">
-          <small>步骤 4（下一轮）</small>
+          <small>步骤 4（未完成，已登记）</small>
           <strong>Vectorized Memory Access：float4 / 128-bit 载入</strong>
           <p>让单条指令搬更多连续数据，配合对齐约束，提高访存吞吐。</p>
         </div>
         <div class="step-card">
-          <small>步骤 5（下一轮）</small>
+          <small>步骤 5（未完成，已登记）</small>
           <strong>Warp Tiling &amp; CUTLASS 抽象</strong>
           <p>把 Threadblock Tile、Warp Tile、Thread Tile 的层级统一起来，逼近高性能内核结构。</p>
         </div>
