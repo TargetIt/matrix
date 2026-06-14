@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>步骤 4 演示：Vectorized Memory Access</title>
+  <style>
+    :root{--bg:#07121d;--panel:#102338;--text:#edf6ff;--muted:#91a9c1;--border:rgba(255,255,255,.09);--scalar:#59d6ff;--vector:#78ff7a;--tail:#ffb454;--bad:#ff6f7e}
+    *{box-sizing:border-box}body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07121d,#050b13);color:var(--text)}
+    .page{width:min(1200px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
+    h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end}label{display:grid;gap:7px;color:var(--muted)}
+    select,input{width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text);accent-color:var(--vector)}
+    .layout{display:grid;grid-template-columns:1.35fr .75fr;gap:16px}.strip{display:grid;grid-template-columns:repeat(32,1fr);gap:3px;margin:14px 0 20px}.word{height:38px;display:grid;place-items:center;border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.035);font-size:.7rem}.word.vector{background:rgba(120,255,122,.17);border-color:rgba(120,255,122,.5)}.word.scalar{background:rgba(89,214,255,.17);border-color:rgba(89,214,255,.5)}.word.tail{background:rgba(255,180,84,.18);border-color:rgba(255,180,84,.55)}.word.padding{opacity:.25}
+    .ops{display:flex;flex-wrap:wrap;gap:6px}.op{padding:7px 9px;border-radius:4px;border:1px solid var(--border);font-size:.78rem}.op.v{border-color:var(--vector);color:var(--vector)}.op.s{border-color:var(--scalar);color:var(--scalar)}.op.t{border-color:var(--tail);color:var(--tail)}
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--vector);font-size:1.3rem;margin-top:4px}.callout{margin-top:12px;padding:13px;border-left:4px solid var(--vector);background:rgba(120,255,122,.07);line-height:1.55}.warning{border-left-color:var(--bad);background:rgba(255,111,126,.08)}
+    table{width:100%;border-collapse:collapse;margin-top:14px}th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left}th{color:var(--muted)}
+    @media(max-width:900px){.controls,.layout{grid-template-columns:1fr}.strip{grid-template-columns:repeat(16,1fr)}}@media(max-width:500px){.stats{grid-template-columns:1fr}.strip{grid-template-columns:repeat(8,1fr)}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <section class="panel">
+    <h1>步骤 4：float4 / 128-bit 向量访存</h1>
+    <p>向量指令不会减少必须传输的数据字节，但能让一条 load/store 搬运多个连续元素。调整向量宽度、起始偏移和元素数量，观察对齐前导、主体向量指令与尾部标量处理。</p>
+    <div class="controls">
+      <label>向量宽度<select id="width"><option value="1">float（32-bit）</option><option value="2">float2（64-bit）</option><option value="4" selected>float4（128-bit）</option></select></label>
+      <label>起始偏移（float）<input id="offset" type="range" min="0" max="7" value="0"><strong id="offsetOut"></strong></label>
+      <label>元素数量<input id="count" type="range" min="8" max="128" value="32" step="1"><strong id="countOut"></strong></label>
+      <label>128B 基地址<select id="base"><option value="0">对齐到 segment</option><option value="28">靠近 segment 尾部</option></select></label>
+    </div>
+  </section>
+  <div class="layout">
+    <section class="panel">
+      <h2>内存元素与指令分组</h2>
+      <div class="strip" id="strip"></div>
+      <div class="ops" id="ops"></div>
+      <table>
+        <thead><tr><th>方案</th><th>Load 指令</th><th>请求字节</th><th>128B 事务</th></tr></thead>
+        <tbody><tr><td>标量 float</td><td id="scalarOps"></td><td id="scalarBytes"></td><td id="scalarTxn"></td></tr><tr><td id="vectorName"></td><td id="vectorOps"></td><td id="vectorBytes"></td><td id="vectorTxn"></td></tr></tbody>
+      </table>
+      <p>颜色语义：<span style="color:var(--scalar)">蓝色为对齐前导标量</span>，<span style="color:var(--vector)">绿色为向量主体</span>，<span style="color:var(--tail)">橙色为尾部标量</span>。</p>
+    </section>
+    <aside class="panel">
+      <h2>实时结果</h2>
+      <div class="stats">
+        <div class="stat"><span>总 load 指令</span><b id="inst"></b></div>
+        <div class="stat"><span>相对标量减少</span><b id="saving"></b></div>
+        <div class="stat"><span>前导 / 向量 / 尾部</span><b id="split"></b></div>
+        <div class="stat"><span>事务利用率</span><b id="eff"></b></div>
+      </div>
+      <div class="callout" id="explain" aria-live="polite"></div>
+      <div class="callout warning">`reinterpret_cast&lt;float4*&gt;` 是对编译器的对齐承诺。地址不满足 16B 对齐时，直接执行 128-bit 访问可能非法或产生未定义行为；工程实现必须使用对齐分配、前导处理或回退路径。</div>
+    </aside>
+  </div>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+function model(){
+  const w=+$('width').value,offset=+$('offset').value,count=+$('count').value,base=+$('base').value;
+  const lead=w===1?0:Math.min(count,(w-offset%w)%w),remaining=count-lead,vec=Math.floor(remaining/w),tail=remaining%w;
+  const firstByte=base*4+offset*4,lastByte=firstByte+count*4-1,txn=Math.floor(lastByte/128)-Math.floor(firstByte/128)+1;
+  return {w,offset,count,base,lead,vec,tail,inst:lead+vec+tail,txn,eff:count*4/(txn*128)};
+}
+function render(){
+  const m=model(),shown=Math.min(128,m.offset+m.count+2);$('offsetOut').textContent=`${m.offset}（${m.offset*4}B）`;$('countOut').textContent=String(m.count);
+  $('strip').innerHTML='';
+  for(let i=0;i<shown;i++){const x=document.createElement('div');x.className='word';x.textContent=i;if(i<m.offset||i>=m.offset+m.count)x.classList.add('padding');else{const local=i-m.offset;if(local<m.lead)x.classList.add('scalar');else if(local<m.lead+m.vec*m.w)x.classList.add('vector');else x.classList.add('tail')}$('strip').appendChild(x)}
+  const ops=[];for(let i=0;i<m.lead;i++)ops.push({t:'s',x:`S ${m.offset+i}`});for(let i=0;i<m.vec;i++)ops.push({t:'v',x:`V${m.w} ${m.offset+m.lead+i*m.w}-${m.offset+m.lead+(i+1)*m.w-1}`});for(let i=0;i<m.tail;i++)ops.push({t:'t',x:`T ${m.offset+m.lead+m.vec*m.w+i}`});
+  $('ops').innerHTML=ops.map(o=>`<span class="op ${o.t}">${o.x}</span>`).join('');
+  $('scalarOps').textContent=m.count;$('scalarBytes').textContent=`${m.count*4} B`;$('scalarTxn').textContent=m.txn;
+  $('vectorName').textContent=m.w===1?'float':`float${m.w}`;$('vectorOps').textContent=m.inst;$('vectorBytes').textContent=`${m.count*4} B`;$('vectorTxn').textContent=m.txn;
+  $('inst').textContent=String(m.inst);$('saving').textContent=`${Math.round((1-m.inst/m.count)*100)}%`;$('split').textContent=`${m.lead} / ${m.vec} / ${m.tail}`;$('eff').textContent=`${Math.round(m.eff*100)}%`;
+  $('explain').textContent=m.w===1?'标量模式每个 float 发出一条 load，用作比较基线。':m.lead===0&&m.tail===0?`完全对齐：${m.count} 个 float 由 ${m.vec} 条 ${m.w*32}-bit 指令完成，指令数是标量方案的 1/${m.w}。`:`当前需要 ${m.lead} 条前导标量和 ${m.tail} 条尾部标量；向量化收益仍存在，但边界处理增加了控制与指令开销。`;
+}
+['width','offset','count','base'].forEach(id=>$(id).addEventListener('input',render));render();
+</script>
+</body>
+</html>

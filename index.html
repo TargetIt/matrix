@@ -250,14 +250,14 @@
         <div class="badge">Interactive SGEMM Tutorial</div>
         <h1>CUDA矩阵乘法(SGEMM)终极优化：从入门到接近 cuBLAS 的交互式可视化教程</h1>
         <p>
-          本页先交付教程的<strong>完整大纲</strong>，以及<strong>前言、步骤 1、步骤 2</strong>的详细讲解，并给出每一部分对应的
+          本页交付教程的<strong>完整大纲</strong>，以及<strong>前言、步骤 1 至步骤 5</strong>的详细讲解，并给出每一部分对应的
           <strong>独立、单文件、可直接双击运行</strong>的 HTML 交互演示。整体叙事吸收了
           <strong>Simon Böhm 的 CUDA MMM 分阶段优化方法</strong>、
           <strong>wangzyon 的 SGEMM 实践工程化经验</strong>，以及
           <strong>NVIDIA CUTLASS 的分层 Tile 抽象</strong>。
         </p>
         <p>
-          当前轮次的目标不是一次性冲刺到 CUTLASS 的最终形态，而是先把读者带过一条最重要的认知主线：
+          教程沿着一条连续的认知主线，从朴素访问逐步走到 CUTLASS 层级：
           <strong>性能提升，本质上是把数据从 GMEM 一层层“推近”到 SMEM、再推近到寄存器，同时让线程访问模式越来越规则。</strong>
         </p>
         <ul class="reference-list">
@@ -270,9 +270,9 @@
         <div class="outline-card">
           <p class="mini-title">仓库当前内容</p>
           <div class="metric-grid">
-            <div class="metric"><b>6</b><span>独立可运行 HTML 演示</span></div>
+            <div class="metric"><b>9</b><span>独立可运行 HTML 演示</span></div>
             <div class="metric"><b>3</b><span>高价值来源专题</span></div>
-            <div class="metric"><b>3</b><span>原有基础演示</span></div>
+            <div class="metric"><b>6</b><span>教程独立演示</span></div>
           </div>
         </div>
         <div class="chart-card">
@@ -340,18 +340,18 @@
           <strong>Global Memory Coalescing：把线程访问整理成尽量少的 128B 事务</strong>
           <p>让 warp 的地址更连续，减少实际搬运字节浪费，是后续所有优化的入口。</p>
         </div>
-        <div class="step-card">
-          <small>步骤 3（未完成，已登记）</small>
+        <div class="step-card active">
+          <small>步骤 3</small>
           <strong>Shared Memory Caching &amp; Block Tiling</strong>
           <p>把 A/B 的 tile 暂存到 SMEM，显著提升数据复用，减少重复的 GMEM 读取。</p>
         </div>
-        <div class="step-card">
-          <small>步骤 4（未完成，已登记）</small>
+        <div class="step-card active">
+          <small>步骤 4</small>
           <strong>Vectorized Memory Access：float4 / 128-bit 载入</strong>
           <p>让单条指令搬更多连续数据，配合对齐约束，提高访存吞吐。</p>
         </div>
-        <div class="step-card">
-          <small>步骤 5（未完成，已登记）</small>
+        <div class="step-card active">
+          <small>步骤 5</small>
           <strong>Warp Tiling &amp; CUTLASS 抽象</strong>
           <p>把 Threadblock Tile、Warp Tile、Thread Tile 的层级统一起来，逼近高性能内核结构。</p>
         </div>
@@ -499,6 +499,144 @@ C[row, col] = sum;</pre>
           <div class="actions">
             <a class="button" href="./demos/step2-global-memory-coalescing.html" target="_blank" rel="noopener">打开独立演示</a>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>步骤 3：Shared Memory Caching —— 让一个 tile 被整个 block 重用</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            合并访存解决了“怎么把数据高效搬进来”，但没有解决“同一数据被不同线程重复搬运”的问题。
+            Block tiling 的做法是让 thread block 协作加载 A 的一块行 tile 和 B 的一块列 tile，
+            先写入片上的 <strong>Shared Memory</strong>，再由 block 内所有线程重复读取。
+          </p>
+          <pre>As[threadRow][threadCol] = A[globalRow][globalK];
+Bs[threadRow][threadCol] = B[globalK][globalCol];
+__syncthreads();
+
+for (int k = 0; k &lt; TILE; ++k)
+  sum += As[threadRow][k] * Bs[k][threadCol];
+
+__syncthreads();</pre>
+          <div class="callout">
+            打开步骤 3 演示，按“下一阶段”依次观察协作加载、同步、SMEM 复用和写回。
+            再切换到右下边界 tile，确认无效线程必须补零读取并禁止越界写回。
+          </div>
+          <ul class="tip-list">
+            <li>第一次同步保证所有 As/Bs 元素写完后才开始计算。</li>
+            <li>第二次同步防止较快线程提前覆盖下一轮 tile。</li>
+            <li>tile 越大，输入复用越高，但每个 block 的 SMEM 占用也越大。</li>
+          </ul>
+        </div>
+        <div>
+          <pre>从 Naive 到 Tiled：
+- Naive：每个 C 元素独立读取整行 A 与整列 B。
+- Tiled：每个 A/B tile 从 GMEM 读取一次。
+- 同一输入在 block 内被多个输出线程消费。
+- 代价：同步、SMEM 容量、边界分支与 bank conflict。</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：SMEM 协作加载与 Block Tiling</h3>
+          <p>文件路径：<code>./demos/step3-shared-memory-block-tiling.html</code></p>
+          <p>可视化要点：阶段推进、A/B tile 装载、同步屏障、复用倍数、SMEM 字节数和边界 tile。</p>
+          <div class="actions"><a class="button" href="./demos/step3-shared-memory-block-tiling.html" target="_blank" rel="noopener">打开独立演示</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>步骤 4：Vectorized Memory Access —— 用一条指令搬运连续的 float4</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            当地址连续且满足对齐约束时，<code>float4</code> 可以用一条 128-bit 指令搬运四个 FP32。
+            它不会减少矩阵必须传输的总字节数，但会减少 load/store 指令、地址计算和在途内存操作数量。
+            在原始 SGEMM 实践参数 <code>BM=128、BK=8、256 threads</code> 中，
+            每线程标量搬运需要四条指令，而 float4 只需一条。
+          </p>
+          <pre>float4 v = reinterpret_cast&lt;float4*&gt;(&amp;A[index])[0];
+
+// 16B 对齐是 128-bit 访问的前提。
+// 任意矩阵尺寸还需要前导或尾部标量路径。</pre>
+          <div class="callout">
+            在步骤 4 演示中改变起始偏移和元素数量。完全对齐时，指令数接近标量方案的四分之一；
+            偏移或长度不整除时，会自动出现前导和尾部标量访问。
+          </div>
+          <ul class="tip-list">
+            <li>向量宽度与地址对齐必须匹配，float4 要求 16B 对齐。</li>
+            <li>向量化和 coalescing 是两个维度：前者减少指令，后者减少内存事务浪费。</li>
+            <li>真实 kernel 还要处理矩阵尾部、leading dimension 和转置布局。</li>
+          </ul>
+        </div>
+        <div>
+          <pre>收益来源：
+- 更少的 LDG/STG 指令。
+- 更少的索引计算。
+- 更少的在途内存操作。
+
+不能忽略：
+- 对齐承诺。
+- 非整除尾部。
+- 128B segment 边界。
+- SMEM 布局和 bank conflict。</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：标量与 float4 指令分组</h3>
+          <p>文件路径：<code>./demos/step4-vectorized-memory-access.html</code></p>
+          <p>可视化要点：向量宽度、地址偏移、前导/主体/尾部、load 指令数和 128B 事务利用率。</p>
+          <div class="actions"><a class="button" href="./demos/step4-vectorized-memory-access.html" target="_blank" rel="noopener">打开独立演示</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>步骤 5：Warp Tiling —— 用寄存器微内核完成层级化复用</h2>
+      <div class="section-grid">
+        <div>
+          <p>
+            Block tiling 之后，单线程只计算一个 C 元素会让 SMEM load 指令过多。
+            Warp tiling 进一步把 block 的 C tile 分给多个 warp，再让每个线程在寄存器中保存一个小型 accumulator tile。
+            A/B fragment 从 SMEM 进入寄存器后，会参与多个 outer-product FMA。
+          </p>
+          <p>
+            CUTLASS 将这套结构明确表达为 <strong>Threadblock Tile → Warp Tile → Thread/Instruction Tile</strong>。
+            tile 越大，数据复用和延迟隐藏机会越多；但 SMEM、寄存器和线程数也会上升，最终会压低 occupancy。
+          </p>
+          <div class="callout">
+            在步骤 5 演示中点击三个层级并调整 block、warp、K tile 与单双缓冲。
+            注意观察：双缓冲让 GMEM→SMEM、SMEM→RF 和 RF→FMA 重叠，但片上存储需求翻倍。
+          </div>
+          <ul class="tip-list">
+            <li>同一行 warp 复用 A fragment，同一列 warp 复用 B fragment。</li>
+            <li>线程 accumulator 越大，FMA/SMEM-load 比越高，但寄存器压力越大。</li>
+            <li>高性能 policy 必须同时满足线程数、SMEM、寄存器和目标 GPU 架构约束。</li>
+          </ul>
+        </div>
+        <div>
+          <pre>层级数据路径：
+GMEM
+  ↓ coalesced / vectorized load
+Threadblock Tile in SMEM
+  ↓ warp fragment load
+Warp Tile
+  ↓ thread-owned fragment
+Register Accumulator
+  ↓ FMA / MMA
+C Epilogue</pre>
+        </div>
+      </div>
+      <div class="demo-grid">
+        <div class="demo-card">
+          <h3>独立演示：Warp Tiling 与 CUTLASS Policy</h3>
+          <p>文件路径：<code>./demos/step5-warp-tiling-cutlass.html</code></p>
+          <p>可视化要点：层级下钻、warp/线程映射、accumulator 下界、SMEM 压力、算术强度和流水重叠。</p>
+          <div class="actions"><a class="button" href="./demos/step5-warp-tiling-cutlass.html" target="_blank" rel="noopener">打开独立演示</a></div>
         </div>
       </div>
     </section>

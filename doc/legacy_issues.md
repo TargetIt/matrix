@@ -5,27 +5,27 @@
 
 ## 当前未完成
 
-- [ ] `LEGACY-001` 教程步骤 3：Shared Memory Caching & Block Tiling
-  - 当前状态：根入口只有大纲，没有详细教程和独立交互演示。
-  - 需要交付：步骤原理、GMEM 到 SMEM 的协作加载、同步、tile 复用和边界处理讲解。
-  - 演示建议路径：`demos/step3-shared-memory-block-tiling.html`
-  - 验收条件：可调 block/tile 参数；可视化 GMEM 读取、SMEM 填充、同步和复用；移动端可用；无控制台错误。
-
-- [ ] `LEGACY-002` 教程步骤 4：Vectorized Memory Access
-  - 当前状态：根入口只有大纲，没有详细教程和独立交互演示。
-  - 需要交付：`float4`/128-bit 载入、地址对齐、尾部处理和标量访问对比讲解。
-  - 演示建议路径：`demos/step4-vectorized-memory-access.html`
-  - 验收条件：可切换标量与向量访问；展示指令数、事务利用率、对齐与非对齐结果；移动端可用；无控制台错误。
-
-- [ ] `LEGACY-003` 教程步骤 5：Warp Tiling & CUTLASS Hierarchy
-  - 当前状态：根入口只有大纲；现有 `cutlass-hierarchy/` 是来源专题，不能替代教程步骤 5 的完整讲解和独立演示。
-  - 需要交付：Threadblock Tile、Warp Tile、Thread Tile、寄存器累加器及层级数据复用讲解，并与步骤 3、4 串联。
-  - 演示建议路径：`demos/step5-warp-tiling-cutlass.html`
-  - 验收条件：可下钻各层 tile；参数变化能反映线程映射、寄存器/SMEM 压力和复用关系；移动端可用；无控制台错误。
+当前无未完成事项。
 
 ## 已完成
 
-当前无从本清单关闭的事项。
+- [x] `LEGACY-001` 教程步骤 3：Shared Memory Caching & Block Tiling
+  - 完成内容：补充详细教程；新增 `demos/step3-shared-memory-block-tiling.html`。
+  - 覆盖范围：协作加载、同步屏障、SMEM 复用、写回和边界 tile。
+  - 验证结果：18 组矩阵规模/tile/位置组合通过；桌面与 390px 无溢出；无控制台错误；键盘阶段推进通过。
+  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
+
+- [x] `LEGACY-002` 教程步骤 4：Vectorized Memory Access
+  - 完成内容：补充详细教程；新增 `demos/step4-vectorized-memory-access.html`。
+  - 覆盖范围：float/float2/float4、对齐前导、向量主体、标量尾部及 128B segment 利用率。
+  - 验证结果：288 组宽度/偏移/长度/基地址组合通过；桌面与 390px 无溢出；无控制台错误；键盘调参通过。
+  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
+
+- [x] `LEGACY-003` 教程步骤 5：Warp Tiling & CUTLASS Hierarchy
+  - 完成内容：补充详细教程；新增 `demos/step5-warp-tiling-cutlass.html`。
+  - 覆盖范围：Threadblock/Warp/Thread 层级、线程映射、accumulator、SMEM、算术强度、单双缓冲和资源风险。
+  - 验证结果：48 组 policy 参数组合通过；桌面与 390px 无溢出；无控制台错误；层级键盘下钻通过。
+  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
 
 ## 维护规则
 

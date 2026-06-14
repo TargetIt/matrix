@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>步骤 5 演示：Warp Tiling 与 CUTLASS 层级</title>
+  <style>
+    :root{--bg:#07111c;--panel:#102238;--text:#edf6ff;--muted:#91a8c1;--border:rgba(255,255,255,.09);--block:#59d6ff;--warp:#b58cff;--thread:#78ff7a;--pipe:#ffb454;--bad:#ff6f7e}
+    *{box-sizing:border-box}body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111c,#050b13);color:var(--text)}
+    .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
+    h1,h2,h3{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:end}label{display:grid;gap:6px;color:var(--muted)}
+    select{width:100%;padding:9px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text)}.layout{display:grid;grid-template-columns:1.3fr .8fr;gap:16px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tabs button{padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.03);color:var(--muted);cursor:pointer}.tabs button.active{color:var(--text);border-color:var(--thread)}
+    svg{width:100%;height:auto;min-height:460px;background:rgba(255,255,255,.02);border-radius:7px}.tile{cursor:pointer}.tile:focus{outline:none}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--thread);font-size:1.25rem;margin-top:4px}
+    .pipeline{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}.stage{padding:10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-align:center}.stage.active{border-color:var(--pipe);color:var(--text);background:rgba(255,180,84,.1)}
+    .callout{margin-top:12px;padding:13px;border-left:4px solid var(--thread);background:rgba(120,255,122,.07);line-height:1.55}.risk{color:var(--bad)!important}.legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:.85rem;margin-top:10px}.legend i{display:inline-block;width:10px;height:10px;margin-right:5px}
+    @media(max-width:920px){.controls,.layout{grid-template-columns:1fr}.pipeline{grid-template-columns:1fr 1fr 1fr}}@media(max-width:520px){.stats,.pipeline{grid-template-columns:1fr}svg{min-height:340px}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <section class="panel">
+    <h1>步骤 5：Threadblock → Warp → Thread Tile</h1>
+    <p>高性能 GEMM 不再让一个线程只算一个 C 元素。它把输出 tile 分给多个 warp，再让每个线程在寄存器中持有一小块 accumulator。调整 policy，观察复用提高与片上资源压力之间的交换关系。</p>
+    <div class="controls">
+      <label>Block M<select id="bm"><option>64</option><option selected>128</option></select></label>
+      <label>Block N<select id="bn"><option>64</option><option selected>128</option></select></label>
+      <label>Warp Tile<select id="warp"><option>32</option><option selected>64</option></select></label>
+      <label>K Tile<select id="bk"><option selected>8</option><option>16</option><option>32</option></select></label>
+      <label>流水<select id="buffer"><option value="1">单缓冲</option><option value="2" selected>双缓冲</option></select></label>
+    </div>
+  </section>
+  <div class="layout">
+    <section class="panel">
+      <div class="tabs" id="tabs"></div>
+      <svg id="viz" viewBox="0 0 760 500" role="img" aria-label="GEMM tile 层级"></svg>
+      <div class="legend"><span><i style="background:var(--block)"></i>Threadblock / SMEM</span><span><i style="background:var(--warp)"></i>Warp tile</span><span><i style="background:var(--thread)"></i>Thread accumulator</span></div>
+    </section>
+    <aside class="panel">
+      <h2>Policy 资源结果</h2>
+      <div class="stats">
+        <div class="stat"><span>Warp 数 / block</span><b id="warps"></b></div>
+        <div class="stat"><span>线程数 / block</span><b id="threads"></b></div>
+        <div class="stat"><span>输出 / thread</span><b id="perThread"></b></div>
+        <div class="stat"><span>Accumulator 下界</span><b id="regs"></b></div>
+        <div class="stat"><span>A/B SMEM</span><b id="smem"></b></div>
+        <div class="stat"><span>Tile 算术强度</span><b id="intensity"></b></div>
+      </div>
+      <div class="pipeline" id="pipeline"><div class="stage">GMEM → SMEM</div><div class="stage">SMEM → RF</div><div class="stage">RF → FMA</div></div>
+      <div class="callout" id="explain" aria-live="polite"></div>
+      <p id="risk"></p>
+    </aside>
+  </div>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),levels=['Threadblock Tile','Warp Tile','Thread Accumulator'];let selected=0;
+function p(){return {bm:+$('bm').value,bn:+$('bn').value,w:+$('warp').value,bk:+$('bk').value,buff:+$('buffer').value}}
+function render(){
+  const v=p(),wr=v.bm/v.w,wc=v.bn/v.w,warps=wr*wc,threads=warps*32,outputs=v.bm*v.bn,per=outputs/threads;
+  const smem=(v.bm*v.bk+v.bn*v.bk)*4*v.buff,flops=2*v.bm*v.bn*v.bk,bytes=(v.bm*v.bk+v.bn*v.bk+v.bm*v.bn)*4;
+  $('tabs').innerHTML=levels.map((x,i)=>`<button class="${i===selected?'active':''}" data-i="${i}" aria-current="${i===selected?'step':'false'}">${x}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selected=+b.dataset.i;render()}));
+  let s=`<rect x="55" y="45" width="650" height="400" rx="6" fill="#59d6ff18" stroke="#59d6ff" stroke-width="${selected===0?5:2}"/><text x="75" y="78" fill="#59d6ff" font-weight="700">Block C tile ${v.bm} × ${v.bn}</text>`;
+  const ww=560/wc,wh=310/wr;
+  for(let r=0;r<wr;r++)for(let c=0;c<wc;c++){const x=100+c*ww,y=100+r*wh;s+=`<g class="tile warpTile" tabindex="0" role="button" data-level="1"><rect x="${x}" y="${y}" width="${ww-8}" height="${wh-8}" rx="4" fill="#b58cff18" stroke="#b58cff" stroke-width="${selected===1?4:2}"/><text x="${x+10}" y="${y+23}" fill="#d8c5ff">warp ${r},${c}</text></g>`}
+  const tx=100+Math.min(ww-55,35),ty=100+Math.min(wh-55,45);s+=`<g class="tile" tabindex="0" role="button" data-level="2"><rect x="${tx}" y="${ty}" width="70" height="52" rx="4" fill="#78ff7a30" stroke="#78ff7a" stroke-width="${selected===2?5:2}"/><text x="${tx+35}" y="${ty+22}" text-anchor="middle" fill="#78ff7a">thread</text><text x="${tx+35}" y="${ty+40}" text-anchor="middle" fill="#edf6ff">${per.toFixed(0)} C</text></g>`;
+  $('viz').innerHTML=s;$('viz').querySelectorAll('.tile').forEach(n=>{const go=()=>{selected=+n.dataset.level;render()};n.addEventListener('click',go);n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}})});
+  $('warps').textContent=warps;$('threads').textContent=threads;$('perThread').textContent=per.toFixed(0);$('regs').textContent=`≥ ${per.toFixed(0)} FP32`;$('smem').textContent=`${(smem/1024).toFixed(1)} KiB`;$('intensity').textContent=`${(flops/bytes).toFixed(1)} FLOP/B`;
+  const texts=[`Block tile 从 GMEM 装入 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B。${v.buff===2?'双缓冲让下一轮加载与当前计算重叠，但 SMEM 翻倍。':'单缓冲占用较低，但阶段之间更容易暴露等待。'}`,`${warps} 个 warp 空间划分 C tile。同行 warp 可共享 A fragment，同列 warp 可共享 B fragment。`,`每线程在寄存器中累计约 ${per.toFixed(0)} 个 C 元素；复用更密集，但 accumulator 会直接增加寄存器压力。`];$('explain').textContent=texts[selected];
+  [...$('pipeline').children].forEach((x,i)=>x.classList.toggle('active',v.buff===2||i===selected));
+  const risks=[];if(threads>1024)risks.push('线程数超过 CUDA block 上限');if(smem>48*1024)risks.push('SMEM 超过常见的 48 KiB/block 默认上限');if(per>128)risks.push('每线程 accumulator 很大，可能造成寄存器溢出');
+  $('risk').className=risks.length?'risk':'';$('risk').textContent=risks.length?`Policy 风险：${risks.join('；')}。`:'当前参数在教学模型的基本资源边界内；真实性能仍需结合目标 GPU occupancy 与 bank conflict 实测。';
+}
+['bm','bn','warp','bk','buffer'].forEach(id=>$(id).addEventListener('change',render));render();
+</script>
+</body>
+</html>
