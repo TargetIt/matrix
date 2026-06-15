@@ -23,6 +23,7 @@
 ## CUDA SGEMM 教程
 
 - 打开 `./index.html` 查看统一入口、教程大纲、前言与步骤 1 至步骤 5。
+- 根入口提供“步骤与原文索引”，每个独立演示顶部也可直接返回对应原文。
 - 独立基础演示位于 `./demos/`，可直接打开对应 HTML 文件运行。
 - 六个教程演示依次覆盖内存层级、Naive SGEMM、合并访存、SMEM Block
   Tiling、向量化访存以及 Warp Tiling/CUTLASS 层级。

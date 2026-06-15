@@ -13,6 +13,7 @@
     h1,h2,h3{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:end}
     label{display:grid;gap:7px;color:var(--muted)}select{width:100%;padding:10px;border:1px solid var(--border);background:#0b1929;color:var(--text);border-radius:6px}
     button{min-height:42px;padding:10px 14px;border-radius:6px;border:1px solid rgba(120,255,122,.35);background:rgba(120,255,122,.1);color:var(--text);font-weight:700;cursor:pointer}
+    button:disabled{opacity:.4;cursor:not-allowed}.stage-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.source-ref{margin:12px 0 0;padding:12px 14px;border-left:4px solid var(--smem);background:rgba(59,130,246,.08);color:var(--muted)}.source-ref a{color:#93c5fd}
     .layout{display:grid;grid-template-columns:1.35fr .85fr;gap:16px}.layout>*{min-width:0}.viz{display:grid;grid-template-columns:1fr 1fr;gap:14px}.memory{min-width:0;padding:14px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.025)}
     .matrix{display:grid;gap:4px;aspect-ratio:1;max-width:100%}.cell{display:grid;place-items:center;min-width:0;border:1px solid rgba(255,255,255,.08);border-radius:3px;background:rgba(255,255,255,.035);font-size:clamp(.58rem,1.3vw,.8rem);transition:background .15s,transform .15s}
     .cell.tile{background:rgba(89,214,255,.14);border-color:rgba(89,214,255,.45)}.cell.loaded{background:rgba(255,180,84,.22);border-color:var(--smem)}.cell.active{background:rgba(120,255,122,.25);border-color:var(--compute);transform:scale(.94)}.cell.out{background:rgba(120,255,122,.13);border-color:rgba(120,255,122,.35)}.cell.zero{color:var(--sync);background:rgba(255,111,145,.09)}
@@ -27,12 +28,13 @@
   <section class="panel">
     <h1>步骤 3：Shared Memory Caching & Block Tiling</h1>
     <p>选择输出 block 和 K tile 轮次，再推进五个阶段。演示同时覆盖 M/N 输出边界、K 维尾块补零，以及覆盖 SMEM 前必须执行的第二次同步。</p>
+    <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 Shared Memory Caching，以及《NVIDIA_SGEMM_PRACTICE》的 shared-memory kernel。<a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">Worklog 原文</a> · <a href="../sgemm-practice/original.md" target="_blank" rel="noopener">SGEMM Practice 原文</a></div>
     <div class="controls">
       <label>矩阵规模 N<select id="size"><option>8</option><option selected>10</option><option>12</option></select></label>
       <label>Block Tile<select id="tile"><option>2</option><option selected>4</option><option>5</option></select></label>
       <label>Block 位置<select id="position"><option value="center">首个完整 tile</option><option value="edge">右下边界 tile</option></select></label>
       <label>K tile 轮次<select id="kRound"></select></label>
-      <button id="next">下一阶段</button>
+      <div class="stage-actions"><button id="prev">上一阶段</button><button id="next">下一阶段</button></div>
     </div>
   </section>
   <div class="layout">
@@ -93,6 +95,8 @@ function render(){
   $('naive').textContent=naive.toLocaleString();$('tiled').textContent=tiled.toLocaleString();$('reuse').textContent=`${(naive/tiled).toFixed(1)}×`;
   $('smem').textContent=`${2*p.t*p.t*4} B`;$('rounds').textContent=`${p.round+1}/${p.roundCount}，有效 K=${p.validK}/${p.t}`;$('threads').textContent=`${outputs} / ${p.t*p.t}`;
   const last=p.round===p.roundCount-1;
+  $('prev').disabled=phase===0&&p.round===0;
+  $('next').disabled=phase===4&&last;
   const messages=[
     `阶段 1：加载 K=[${p.kStart}, ${p.kStart+p.t-1}]。有效 K 槽 ${p.validK}/${p.t}，其余槽补 0。`,
     '阶段 2：第一次 __syncthreads() 保证 As/Bs 完整可见，然后所有线程才能读取当前 tile。',
@@ -101,7 +105,8 @@ function render(){
     last?`阶段 5：K 主循环完成，${outputs} 个有效线程写回 C；无效线程禁止越界写。`:`阶段 5：当前 partial sum 保留在寄存器，随后进入第 ${p.round+2} 个 K tile。`
   ];$('explain').textContent=messages[phase];
 }
-$('next').addEventListener('click',()=>{if(phase===4){const p=params();$('kRound').value=(p.round+1)%p.roundCount;phase=0}else phase++;render()});
+$('prev').addEventListener('click',()=>{if(phase===0){const p=params();if(p.round>0){$('kRound').value=p.round-1;phase=4}}else phase--;render()});
+$('next').addEventListener('click',()=>{if(phase===4){const p=params();if(p.round<p.roundCount-1){$('kRound').value=p.round+1;phase=0}}else phase++;render()});
 ['size','tile'].forEach(id=>$(id).addEventListener('change',()=>{phase=0;syncRounds();render()}));
 ['position','kRound'].forEach(id=>$(id).addEventListener('change',()=>{phase=0;render()}));
 syncRounds();render();

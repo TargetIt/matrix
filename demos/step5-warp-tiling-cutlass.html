@@ -11,13 +11,14 @@
     *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111c,#050b13);color:var(--text)}
     .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
     h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;align-items:end}label{display:grid;gap:6px;color:var(--muted)}
-    select{width:100%;padding:9px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text)}.layout{display:grid;grid-template-columns:1.3fr .8fr;gap:16px}.layout>*{min-width:0}
+    select{width:100%;padding:9px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text)}button{font:inherit}.layout{display:grid;grid-template-columns:1.3fr .8fr;gap:16px}.layout>*{min-width:0}
     .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tabs button{min-height:42px;padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.03);color:var(--muted);cursor:pointer}.tabs button.active{color:var(--text);border-color:var(--thread)}
     svg{display:block;width:100%;max-width:100%;height:auto;min-height:460px;background:rgba(255,255,255,.02);border-radius:7px}.tile{cursor:pointer;touch-action:manipulation}.tile:focus{outline:none}.tile:focus-visible rect{stroke:#fff;stroke-width:6}
     .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{min-width:0;padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--thread);font-size:1.18rem;margin-top:4px}
     .pipeline{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}.stage{padding:10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-align:center}.stage.active{border-color:var(--pipe);color:var(--text);background:rgba(255,180,84,.1)}
     .callout{margin-top:12px;padding:13px;border-left:4px solid var(--thread);background:rgba(120,255,122,.07);line-height:1.55}.risk{color:var(--bad)!important}.legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:.85rem;margin-top:10px}.legend i{display:inline-block;width:10px;height:10px;margin-right:5px}
-    @media(max-width:920px){.controls,.layout{grid-template-columns:1fr}.pipeline{grid-template-columns:repeat(3,1fr)}}@media(max-width:520px){.tabs{display:grid;grid-template-columns:1fr}.tabs button{min-height:44px;width:100%}.stats,.pipeline{grid-template-columns:1fr}svg{min-height:340px}}
+    .source-ref{margin:12px 0 0;padding:12px 14px;border-left:4px solid var(--warp);background:rgba(139,92,246,.09);color:var(--muted)}.source-ref a{color:#c4b5fd}.stage-actions{display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px}.stage-actions button{min-height:42px;padding:9px 14px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.04);color:var(--text);font-weight:700;cursor:pointer}.stage-actions button:disabled{opacity:.4;cursor:not-allowed}.stage-dim{opacity:.2}
+    @media(max-width:920px){.controls,.layout{grid-template-columns:1fr}.pipeline{grid-template-columns:repeat(3,1fr)}}@media(max-width:520px){.tabs,.stage-actions{display:grid;grid-template-columns:1fr}.tabs button,.stage-actions button{min-height:44px;width:100%}.stats,.pipeline{grid-template-columns:1fr}svg{min-height:340px}}
   </style>
 </head>
 <body>
@@ -25,6 +26,7 @@
   <section class="panel">
     <h1>步骤 5：Threadblock → Warp → 32 Lane Thread Tiles</h1>
     <p>选择 policy 后，点击任意 warp，再进入 Thread Tile 层查看该 warp 内 32 个 lane 的 accumulator 所有权。资源数字是指定架构下的静态上界估算，不代表编译器或运行时实测。</p>
+    <div class="source-ref"><strong>本步骤参考：</strong>《CUTLASS: Fast Linear Algebra in CUDA C++》中的 GEMM hierarchy、warp/thread tile、寄存器 accumulator 和双缓冲流水；性能背景同时参考 Worklog。<a href="../cutlass-hierarchy/original.md" target="_blank" rel="noopener">CUTLASS 原文</a> · <a href="../cutlass-hierarchy/SOURCE.md" target="_blank" rel="noopener">来源记录</a> · <a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">Worklog 原文</a></div>
     <div class="controls">
       <label>Block M<select id="bm"><option>64</option><option selected>128</option></select></label>
       <label>Block N<select id="bn"><option>64</option><option selected>128</option></select></label>
@@ -38,6 +40,7 @@
   <div class="layout">
     <section class="panel">
       <div class="tabs" id="tabs"></div>
+      <div class="stage-actions"><button id="prev">上一阶段</button><button id="next">下一阶段</button></div>
       <svg id="viz" viewBox="0 0 760 500" role="img" aria-label="GEMM tile 层级和 32 lane 映射"></svg>
       <div class="legend"><span><i style="background:var(--block)"></i>Threadblock / SMEM</span><span><i style="background:var(--warp)"></i>选中 Warp tile</span><span><i style="background:var(--thread)"></i>Lane accumulator tile</span></div>
     </section>
@@ -62,7 +65,7 @@
 <script src="../assets/gemm-policy.js"></script>
 <script>
 'use strict';
-const $=id=>document.getElementById(id),levels=['Threadblock Tile','选择 Warp Tile','32 Lane / Thread Tile'];
+const $=id=>document.getElementById(id),levels=['Threadblock Tile','选择 Warp Tile','32 Lane / Thread Tile','资源与流水'];
 let selected=0,selectedWarp=0,selectedLane=0;
 function p(){return {bm:+$('bm').value,bn:+$('bn').value,w:+$('warp').value,bk:+$('bk').value,k:+$('totalK').value,buff:+$('buffer').value,architecture:$('architecture').value}}
 function policy(){
@@ -85,18 +88,21 @@ function render(){
   const v=policy();selectedWarp=Math.min(selectedWarp,v.warps-1);
   $('tabs').innerHTML=levels.map((x,i)=>`<button class="${i===selected?'active':''}" data-i="${i}" aria-current="${i===selected?'step':'false'}">${x}</button>`).join('');
   $('tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selected=+b.dataset.i;render()}));
-  $('viz').innerHTML=selected===2?laneView(v):blockView(v);
+  $('prev').disabled=selected===0;$('next').disabled=selected===levels.length-1;
+  $('viz').innerHTML=selected>=2?laneView(v):blockView(v);
   $('viz').querySelectorAll('.tile').forEach(n=>{const go=()=>{selected=+n.dataset.level;if(n.dataset.warp!==undefined)selectedWarp=+n.dataset.warp;if(n.dataset.lane!==undefined)selectedLane=+n.dataset.lane;render()};n.addEventListener('click',go);n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}})});
   $('threads').textContent=`${v.warps} warps / ${v.threads} threads`;$('threadTile').textContent=`${v.tm}×${v.tn} = ${v.per} C`;
   $('regs').textContent=`≥ ${v.regWork} FP32/thread`;$('smem').textContent=`${(v.smem/1024).toFixed(1)} KiB`;
   $('mainIntensity').textContent=`${v.mainIntensity.toFixed(1)} FLOP/B`;$('fullIntensity').textContent=`${v.fullIntensity.toFixed(1)} FLOP/B`;
   $('blocks').textContent=String(v.activeBlocks);$('occupancy').textContent=`${Math.round(v.occupancy*100)}%`;
   const wr=Math.floor(selectedWarp/v.warpCols),wc=selectedWarp%v.warpCols;
-  const texts=[`Block tile 为 ${v.bm}×${v.bn}，每个 K tile 搬运 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B。A/B 主循环强度 ${v.mainIntensity.toFixed(1)} FLOP/B 与 BK 无关。`,`当前选中 warp ${wr},${wc}。${v.warps} 个 warp 无重叠地覆盖 C tile；点击其他 warp 可改变下钻对象。`,`warp ${wr},${wc} 内 32 个 lane 按 4×8 逻辑网格拥有各自 ${v.tm}×${v.tn} accumulator。当前 lane ${selectedLane} 持有 ${v.per} 个 C 元素。真实 GPU 的 MMA fragment 坐标会随架构和指令发生交织重排，此处仅表示逻辑所有权和面积。`];
-  $('explain').textContent=texts[selected];[...$('pipeline').children].forEach((x,i)=>x.classList.toggle('active',v.buff===2||i===selected));
+  const texts=[`阶段 1：Block tile 为 ${v.bm}×${v.bn}，每个 K tile 搬运 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B 到 SMEM。`,`阶段 2：当前选中 warp ${wr},${wc}。${v.warps} 个 warp 无重叠地覆盖 C tile；点击其他 warp 可改变下钻对象。`,`阶段 3：warp ${wr},${wc} 内 32 个 lane 按 4×8 逻辑网格拥有各自 ${v.tm}×${v.tn} accumulator。当前 lane ${selectedLane} 持有 ${v.per} 个 C 元素。`,`阶段 4：汇总 A/B 主循环强度、完整强度、SMEM、寄存器和 occupancy。真实结果仍需编译器与 profiler 验证。`];
+  $('explain').textContent=texts[selected];document.querySelector('.stats').classList.toggle('stage-dim',selected<3);$('pipeline').classList.toggle('stage-dim',selected<3);[...$('pipeline').children].forEach(x=>x.classList.toggle('active',selected===3&&v.buff===2));
   const risks=[...v.errors,...v.warnings];
   $('risk').className=risks.length?'risk':'';$('risk').textContent=risks.length?`Policy 风险：${risks.join('；')}。`:`${v.architecture.label}：资源估算可驻留；实际 occupancy 仍受编译器寄存器分配、架构限制和 bank conflict 影响。`;
 }
+$('prev').addEventListener('click',()=>{selected=Math.max(0,selected-1);render()});
+$('next').addEventListener('click',()=>{selected=Math.min(levels.length-1,selected+1);render()});
 ['bm','bn','warp','bk','totalK','buffer','architecture'].forEach(id=>$(id).addEventListener('change',()=>{selectedWarp=0;selectedLane=0;render()}));render();
 </script>
 </body>

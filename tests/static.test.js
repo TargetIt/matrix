@@ -23,9 +23,33 @@ const step5 = read('demos/step5-warp-tiling-cutlass.html');
 assert.match(step5, /assets\/gemm-policy\.js/);
 assert.match(step5, /Ampere A6000 示例/);
 assert.match(step5, /#8B5CF6/);
+assert.match(step5, /资源与流水/);
+assert.match(step5, /id="prev"/);
+assert.match(step5, /id="next"/);
 
 const step4 = read('demos/step4-vectorized-memory-access.html');
 assert.match(step4, /不等价于 profiler 报告的实际硬件内存事务数/);
+assert.match(step4, /标量基线/);
+assert.match(step4, /id="prev"/);
+assert.match(step4, /id="next"/);
+
+const step3 = read('demos/step3-shared-memory-block-tiling.html');
+assert.match(step3, /id="prev"/);
+assert.match(step3, /id="next"/);
+assert.match(step3, /phase===4&&last/);
+
+for (const demo of [
+  'demos/preface-memory-hierarchy.html',
+  'demos/step1-naive-sgemm.html',
+  'demos/step2-global-memory-coalescing.html',
+  'demos/step3-shared-memory-block-tiling.html',
+  'demos/step4-vectorized-memory-access.html',
+  'demos/step5-warp-tiling-cutlass.html'
+]) {
+  assert.match(read(demo), /\.\.\/(cuda-matmul-worklog|sgemm-practice|cutlass-hierarchy)\/original\.md/, `source link missing: ${demo}`);
+}
+
+assert.match(read('index.html'), /步骤与原文索引/);
 
 for (const page of [
   'index.html',

@@ -49,4 +49,6 @@
 - Headless Chrome `390x844`：10 个页面无 JavaScript 异常、无页面级横向溢出。
 - CUTLASS 默认值：32 outputs/thread、4 warps / 128 threads、12.8 FLOP/B、
   12.2 FLOP/B、75% occupancy。
+- Step 3、Step 4、Step 5 的上一/下一阶段往返通过；移动端无页面级横向溢出。
+- 根入口包含 6 个教程阶段到三篇来源的原文索引，每个独立演示均有原文入口。
 - 未执行 FCP、帧率、长期内存和真实用户学习效果测试；继续记录在遗留问题。

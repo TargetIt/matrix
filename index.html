@@ -236,6 +236,11 @@
       padding-left: 18px;
       margin: 12px 0 0;
     }
+    .source-index { width: 100%; border-collapse: collapse; margin-top: 18px; }
+    .source-index th, .source-index td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    .source-index th { color: var(--cyan); font-size: .82rem; }
+    .source-index a { color: var(--green); }
+    .source-index td:first-child { white-space: nowrap; font-weight: 800; }
 
     @media (max-width: 920px) {
       .hero, .section-grid { grid-template-columns: 1fr; }
@@ -357,6 +362,19 @@
           <p>把 Threadblock Tile、Warp Tile、Thread Tile 的层级统一起来，逼近高性能内核结构。</p>
         </div>
       </div>
+      <h3>步骤与原文索引</h3>
+      <p>每个独立演示顶部也保留相同的参考入口，用于随时回到原文核对可视化思路。</p>
+      <table class="source-index">
+        <thead><tr><th>教程阶段</th><th>主要参考</th><th>原文入口</th></tr></thead>
+        <tbody>
+          <tr><td>前言</td><td>Worklog 的 GPU 内存层级、GMEM/SMEM 与寄存器背景</td><td><a href="./cuda-matmul-worklog/original.md">Worklog 原文</a></td></tr>
+          <tr><td>步骤 1</td><td>Worklog 的 Naive kernel、线程映射和逐 K 累加</td><td><a href="./cuda-matmul-worklog/original.md">Worklog 原文</a></td></tr>
+          <tr><td>步骤 2</td><td>Worklog 的 warp 与 Global Memory Coalescing</td><td><a href="./cuda-matmul-worklog/original.md">Worklog 原文</a></td></tr>
+          <tr><td>步骤 3</td><td>Worklog 的 Shared Memory Caching；SGEMM Practice 的共享内存 kernel</td><td><a href="./cuda-matmul-worklog/original.md">Worklog</a> · <a href="./sgemm-practice/original.md">SGEMM Practice</a></td></tr>
+          <tr><td>步骤 4</td><td>SGEMM Practice 的 FLOAT4 向量访存；Worklog 的合并访存背景</td><td><a href="./sgemm-practice/original.md">SGEMM Practice</a> · <a href="./cuda-matmul-worklog/original.md">Worklog</a></td></tr>
+          <tr><td>步骤 5</td><td>CUTLASS 的 GEMM hierarchy、warp/thread tile 和双缓冲</td><td><a href="./cutlass-hierarchy/original.md">CUTLASS 原文</a> · <a href="./cuda-matmul-worklog/original.md">Worklog</a></td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="section">
