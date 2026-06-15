@@ -93,7 +93,7 @@ function render(){
   $('mainIntensity').textContent=`${v.mainIntensity.toFixed(1)} FLOP/B`;$('fullIntensity').textContent=`${v.fullIntensity.toFixed(1)} FLOP/B`;
   $('blocks').textContent=String(v.activeBlocks);$('occupancy').textContent=`${Math.round(v.occupancy*100)}%`;
   const wr=Math.floor(selectedWarp/v.warpCols),wc=selectedWarp%v.warpCols;
-  const texts=[`Block tile 为 ${v.bm}×${v.bn}，每个 K tile 搬运 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B。A/B 主循环强度 ${v.mainIntensity.toFixed(1)} FLOP/B 与 BK 无关。`,`当前选中 warp ${wr},${wc}。${v.warps} 个 warp 无重叠地覆盖 C tile；点击其他 warp 可改变下钻对象。`,`warp ${wr},${wc} 内 32 个 lane 按 4×8 网格拥有各自 ${v.tm}×${v.tn} accumulator。当前 lane ${selectedLane} 持有 ${v.per} 个 C 元素。`];
+  const texts=[`Block tile 为 ${v.bm}×${v.bn}，每个 K tile 搬运 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B。A/B 主循环强度 ${v.mainIntensity.toFixed(1)} FLOP/B 与 BK 无关。`,`当前选中 warp ${wr},${wc}。${v.warps} 个 warp 无重叠地覆盖 C tile；点击其他 warp 可改变下钻对象。`,`warp ${wr},${wc} 内 32 个 lane 按 4×8 逻辑网格拥有各自 ${v.tm}×${v.tn} accumulator。当前 lane ${selectedLane} 持有 ${v.per} 个 C 元素。真实 GPU 的 MMA fragment 坐标会随架构和指令发生交织重排，此处仅表示逻辑所有权和面积。`];
   $('explain').textContent=texts[selected];[...$('pipeline').children].forEach((x,i)=>x.classList.toggle('active',v.buff===2||i===selected));
   const risks=[];if(v.threads>1024)risks.push('线程数超过 1024/block');if(v.smem>48*1024)risks.push('SMEM 超过常见 48 KiB/block 默认上限');if(v.regWork>255)risks.push('估算寄存器工作集超过常见单线程上限');if(v.activeBlocks===0)risks.push('资源模型无法驻留一个 block');
   $('risk').className=risks.length?'risk':'';$('risk').textContent=risks.length?`Policy 风险：${risks.join('；')}。`:'资源估算可驻留；实际 occupancy 仍受编译器寄存器分配、架构限制和 bank conflict 影响。';
