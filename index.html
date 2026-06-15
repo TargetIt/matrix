@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/semantic-colors.css">
   <title>CUDA矩阵乘法(SGEMM)终极优化：交互式可视化教程</title>
   <style>
     :root {
@@ -12,11 +13,11 @@
       --panel-2: #13253b;
       --text: #e9f3ff;
       --muted: #97abc5;
-      --green: #76ff7a;
+      --green: var(--semantic-register);
       --green-2: #2ec96b;
-      --cyan: #55d6ff;
-      --orange: #ffb454;
-      --red: #ff6b7a;
+      --cyan: var(--semantic-smem);
+      --orange: var(--semantic-math);
+      --red: var(--semantic-gmem);
       --border: rgba(255,255,255,0.08);
       --shadow: 0 18px 50px rgba(0,0,0,0.28);
     }

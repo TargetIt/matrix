@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>步骤 4 演示：Vectorized Memory Access</title>
   <style>
-    :root{--bg:#07121d;--panel:#102338;--text:#edf6ff;--muted:#91a9c1;--border:rgba(255,255,255,.09);--scalar:#59d6ff;--vector:#78ff7a;--tail:#ffb454;--bad:#ff6f7e}
+    :root{--bg:#07121d;--panel:#102338;--text:#edf6ff;--muted:#91a9c1;--border:rgba(255,255,255,.09);--scalar:var(--semantic-smem);--vector:var(--semantic-register);--tail:var(--semantic-math);--bad:var(--semantic-gmem)}
     *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07121d,#050b13);color:var(--text)}
     .page{width:min(1200px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
     h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end}label{display:grid;gap:7px;color:var(--muted)}
@@ -36,7 +37,7 @@
       <div class="strip" id="strip"></div>
       <div class="ops" id="ops"></div>
       <table>
-        <thead><tr><th>方案</th><th>Load 指令</th><th>请求字节</th><th>128B 事务</th></tr></thead>
+        <thead><tr><th>方案</th><th>Load 指令</th><th>请求字节</th><th>触及 128B segment</th></tr></thead>
         <tbody><tr><td>标量 float</td><td id="scalarOps"></td><td id="scalarBytes"></td><td id="scalarTxn"></td></tr><tr><td id="vectorName"></td><td id="vectorOps"></td><td id="vectorBytes"></td><td id="vectorTxn"></td></tr></tbody>
       </table>
       <p>颜色语义：<span style="color:var(--scalar)">蓝色为对齐前导标量</span>，<span style="color:var(--vector)">绿色为向量主体</span>，<span style="color:var(--tail)">橙色为尾部标量</span>。</p>
@@ -47,9 +48,10 @@
         <div class="stat"><span>总 load 指令</span><b id="inst"></b></div>
         <div class="stat"><span>相对标量减少</span><b id="saving"></b></div>
         <div class="stat"><span>前导 / 向量 / 尾部</span><b id="split"></b></div>
-        <div class="stat"><span>事务利用率</span><b id="eff"></b></div>
+        <div class="stat"><span>连续区间 segment 利用率</span><b id="eff"></b></div>
       </div>
       <div class="callout" id="explain" aria-live="polite"></div>
+      <div class="callout">该模型只计算一个连续地址区间触及多少个 128B segment，用于说明对齐和边界浪费；它不模拟 32 个 lane 的地址分布，也不等价于 profiler 报告的实际硬件内存事务数。</div>
       <div class="callout warning">`reinterpret_cast&lt;float4*&gt;` 是对编译器的对齐承诺。地址不满足 16B 对齐时，直接执行 128-bit 访问可能非法或产生未定义行为；工程实现必须使用对齐分配、前导处理或回退路径。</div>
     </aside>
   </div>

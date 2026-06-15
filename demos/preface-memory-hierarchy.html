@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>前言演示：GPU 内存层级与复用</title>
   <style>
     :root {
@@ -11,9 +12,9 @@
       --border: rgba(255,255,255,0.08);
       --text: #edf6ff;
       --muted: #8ea5bf;
-      --green: #7dff7c;
-      --cyan: #57d6ff;
-      --orange: #ffbe55;
+      --green: var(--semantic-register);
+      --cyan: var(--semantic-smem);
+      --orange: var(--semantic-math);
     }
     * { box-sizing: border-box; }
     body {
@@ -132,7 +133,7 @@
         <div class="tip" id="insight">
           当 reuse 很低时，你几乎每做几次 FMA 就要重新回到 GMEM 取数据；当 reuse 提高后，GMEM 读取被更多片上消费摊薄，吞吐才有机会逼近计算峰值。
         </div>
-        <p>建议观察：绿色粒子代表 A/B tile 数据，青色粒子代表被推进到 SMEM 后的共享数据，橙色粒子代表进入寄存器后的私有片段。reuse 越高，粒子越会在右侧层级停留更久、被复用更多次。</p>
+        <p>建议观察：红色粒子代表从 GMEM 搬运的 A/B tile，蓝色粒子代表 SMEM 中的共享数据，绿色粒子代表进入寄存器后的私有片段。reuse 越高，片上消费次数越多。</p>
       </section>
     </div>
   </div>
@@ -154,9 +155,9 @@
     const resetBtn = document.getElementById('resetBtn');
 
     const levels = {
-      gmem: { x: 70, y: 120, w: 170, h: 240, color: '#7dff7c' },
-      smem: { x: 300, y: 145, w: 160, h: 190, color: '#57d6ff' },
-      regs: { x: 540, y: 170, w: 150, h: 140, color: '#ffbe55' }
+      gmem: { x: 70, y: 120, w: 170, h: 240, color: '#EF4444' },
+      smem: { x: 300, y: 145, w: 160, h: 190, color: '#3B82F6' },
+      regs: { x: 540, y: 170, w: 150, h: 140, color: '#22C55E' }
     };
 
     let activeLevel = null;
@@ -179,9 +180,9 @@
     function makeParticles() {
       particles = [];
       const reuseFactor = Number(reuse.value);
-      for (let i = 0; i < 14; i++) particles.push(createParticle('gmem', 'smem', '#7dff7c', i * 0.08));
-      for (let i = 0; i < Math.min(26, 8 + reuseFactor); i++) particles.push(createParticle('smem', 'regs', '#57d6ff', i * 0.06));
-      for (let i = 0; i < Math.min(34, 12 + reuseFactor * 2); i++) particles.push(createParticle('regs', 'regs', '#ffbe55', i * 0.04, true));
+      for (let i = 0; i < 14; i++) particles.push(createParticle('gmem', 'smem', '#EF4444', i * 0.08));
+      for (let i = 0; i < Math.min(26, 8 + reuseFactor); i++) particles.push(createParticle('smem', 'regs', '#3B82F6', i * 0.06));
+      for (let i = 0; i < Math.min(34, 12 + reuseFactor * 2); i++) particles.push(createParticle('regs', 'regs', '#22C55E', i * 0.04, true));
     }
 
     function updateMetrics() {
@@ -304,9 +305,9 @@
     function drawUsageBars() {
       const r = Number(reuse.value);
       const stats = [
-        { label: 'GMEM 带宽压力', value: Math.max(18, 100 - r * 5), color: '#7dff7c', x: 78, y: 382 },
-        { label: 'SMEM 复用贡献', value: Math.min(92, 18 + r * 4), color: '#57d6ff', x: 308, y: 382 },
-        { label: '寄存器驻留度', value: Math.min(96, 28 + r * 4), color: '#ffbe55', x: 548, y: 382 }
+        { label: `GMEM ${Math.round(8 / r * 100) / 100} B/FMA`, value: 100 / r, color: '#EF4444', x: 78, y: 382 },
+        { label: `复用 ${r}×`, value: r / 16 * 100, color: '#3B82F6', x: 308, y: 382 },
+        { label: `${Math.round(r / 8 * 100) / 100} FMA/B`, value: r / 16 * 100, color: '#22C55E', x: 548, y: 382 }
       ];
 
       stats.forEach((item) => {

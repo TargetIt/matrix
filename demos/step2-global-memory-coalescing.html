@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>步骤 2 演示：Global Memory Coalescing</title>
   <style>
     :root {
@@ -11,10 +12,10 @@
       --border: rgba(255,255,255,0.08);
       --text: #eef6ff;
       --muted: #90a7bf;
-      --green: #7cff7f;
-      --cyan: #59d6ff;
-      --orange: #ffb85c;
-      --red: #ff6f7e;
+      --green: var(--semantic-register);
+      --cyan: var(--semantic-smem);
+      --orange: var(--semantic-math);
+      --red: var(--semantic-gmem);
     }
     * { box-sizing: border-box; }
     body {

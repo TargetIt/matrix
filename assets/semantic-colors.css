@@ -1,0 +1,10 @@
+:root {
+  --semantic-gmem: #EF4444;
+  --semantic-smem: #3B82F6;
+  --semantic-register: #22C55E;
+  --semantic-warp: #8B5CF6;
+  --semantic-math: #F59E0B;
+  --semantic-muted: #9CA3AF;
+  --semantic-background: #0F172A;
+  --semantic-text: #F8FAFC;
+}

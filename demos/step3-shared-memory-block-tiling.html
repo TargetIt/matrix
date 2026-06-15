@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>步骤 3 演示：Shared Memory 与 Block Tiling</title>
   <style>
-    :root{--text:#edf6ff;--muted:#91a8c2;--border:rgba(255,255,255,.09);--gmem:#59d6ff;--smem:#ffb454;--compute:#78ff7a;--sync:#ff6f91}
+    :root{--text:#edf6ff;--muted:#91a8c2;--border:rgba(255,255,255,.09);--gmem:var(--semantic-gmem);--smem:var(--semantic-smem);--compute:var(--semantic-register);--sync:var(--semantic-math)}
     *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111d,#050b13);color:var(--text)}
     .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(18,39,63,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
     h1,h2,h3{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:end}

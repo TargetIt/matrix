@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>NVIDIA SGEMM Practice 优化阶梯</title>
   <style>
-    :root{--bg:#0b1116;--panel:#131c23;--panel2:#18242d;--ink:#eef5f7;--muted:#93a5ae;--line:#2c3b44;--green:#65d482;--cyan:#51bddd;--amber:#e8b44d;--red:#e86f61}
+    :root{--bg:#0b1116;--panel:#131c23;--panel2:#18242d;--ink:#eef5f7;--muted:#93a5ae;--line:#2c3b44;--green:var(--semantic-register);--cyan:var(--semantic-smem);--amber:var(--semantic-math);--red:var(--semantic-gmem)}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
     button,select{font:inherit}.shell{width:min(1320px,calc(100% - 30px));margin:auto;padding:22px 0 60px}
     a{color:var(--green)}.back{text-decoration:none;font-weight:750}
@@ -62,11 +63,12 @@
             <div class="metric"><span>相对 cuBLAS</span><b id="ratio"></b></div>
           </div>
           <div class="delta"><b id="gain"></b><span id="change"></span></div>
-          <div class="memory">
-            <div class="lane"><small>GMEM 复用</small><div class="track"><div class="fill" id="gmemBar" style="background:var(--red)"></div></div><output id="gmemOut"></output></div>
-            <div class="lane"><small>SMEM 复用</small><div class="track"><div class="fill" id="smemBar" style="background:var(--cyan)"></div></div><output id="smemOut"></output></div>
-            <div class="lane"><small>寄存器复用</small><div class="track"><div class="fill" id="regBar" style="background:var(--green)"></div></div><output id="regOut"></output></div>
+          <div class="memory" aria-label="当前 kernel 已引入的数据复用机制">
+            <div class="lane"><small>GMEM 协作加载</small><div class="track"><div class="fill" id="gmemBar" style="background:var(--red)"></div></div><output id="gmemOut"></output></div>
+            <div class="lane"><small>SMEM Tile 复用</small><div class="track"><div class="fill" id="smemBar" style="background:var(--cyan)"></div></div><output id="smemOut"></output></div>
+            <div class="lane"><small>寄存器 Tile 复用</small><div class="track"><div class="fill" id="regBar" style="background:var(--green)"></div></div><output id="regOut"></output></div>
           </div>
+          <p class="sub">机制状态来自原文的 kernel 实现；色条仅表示“未引入 / 已引入”，不是实测复用率。</p>
           <p class="insight" id="insight"></p>
         </div>
       </section>
@@ -93,13 +95,13 @@
 <script>
 'use strict';
 const kernels=[
- {n:1,name:'朴素实现',g:2262.168,p:15.65657,desc:'每线程计算 C 的一个元素。',change:'直接从 GMEM 读取 2K 个输入值。',insight:'同一 A 行与 B 列被大量线程重复读取，低计算访存比无法掩盖数百 cycle 的全局内存延迟。',reuse:[8,0,2],stage:0,code:'1 output / thread'},
- {n:2,name:'共享内存缓存',g:4216.536,p:29.18283,desc:'Block tile 缓存到片上 SMEM。',change:'BM=BN=BK=32 时，原文推导 GMEM 读取约降至 1/32。',insight:'协作加载让同一个 A/B tile 被整个 block 重用，但每线程仍只算一个结果，SMEM 读取压力仍高。',reuse:[68,46,4],stage:1,code:'BM×BN · BK sweep'},
- {n:3,name:'一维 Thread Tile',g:7809.629,p:54.05078,desc:'每线程沿 M 方向计算多个输出。',change:'扩大 BM/BN、减小 BK，并用寄存器保存多个 partial sum。',insight:'一个 B 值可服务多个输出 FMA，减少重复 SMEM load；tile 不能无限增大，否则并发 block 与 occupancy 会下降。',reuse:[72,65,38],stage:2,code:'TM outputs / thread'},
- {n:4,name:'二维 Thread Tile',g:12251.3,p:84.79179,desc:'每线程计算二维输出小块。',change:'A/B 寄存器片段形成小型 outer product。',insight:'二维 tile 同时复用 A 与 B，比一维 tile 更充分地提高每次 SMEM 读取对应的 FMA 数量。',reuse:[76,82,72],stage:2,code:'TM×TN outputs / thread'},
- {n:5,name:'寄存器缓存',g:12177.95,p:84.28412,desc:'显式缓存 A/B fragment。',change:'将反复使用的标量保留在 register file。',insight:'该实测点略低于 kernel 4，说明“加入一种优化”不保证孤立地提升性能；寄存器压力与指令调度也会改变。',reuse:[76,84,88],stage:2,code:'reg_a[TM] · reg_b[TN]'},
- {n:6,name:'FLOAT4 向量访存',g:13161.49,p:91.09125,desc:'128-bit 对齐向量化加载。',change:'一次指令搬运 4 个 FP32，降低内存指令数量。',insight:'向量访存依赖地址对齐；它改善事务和指令效率，但不能替代前面已经建立的数据复用层级。',reuse:[88,85,90],stage:3,code:'float4 · 128-bit'},
- {n:7,name:'双缓存预取',g:13634.98,p:94.36832,desc:'加载下一 tile 与当前计算重叠。',change:'Ping-pong buffer 隐藏 GMEM→SMEM 延迟。',insight:'最终核达到 cuBLAS 的 94.37%。双缓存用更多片上容量换流水并行，适合已有高复用、计算时间足够覆盖加载的主循环。',reuse:[92,91,94],stage:3,code:'load(k+1) ∥ compute(k)'}
+ {n:1,name:'朴素实现',g:2262.168,p:15.65657,desc:'每线程计算 C 的一个元素。',change:'直接从 GMEM 读取 2K 个输入值。',insight:'同一 A 行与 B 列被大量线程重复读取，低计算访存比无法掩盖数百 cycle 的全局内存延迟。',mechanisms:[0,0,0],stage:0,code:'1 output / thread'},
+ {n:2,name:'共享内存缓存',g:4216.536,p:29.18283,desc:'Block tile 缓存到片上 SMEM。',change:'BM=BN=BK=32 时，原文推导 GMEM 读取约降至 1/32。',insight:'协作加载让同一个 A/B tile 被整个 block 重用，但每线程仍只算一个结果，SMEM 读取压力仍高。',mechanisms:[1,1,0],stage:1,code:'BM×BN · BK sweep'},
+ {n:3,name:'一维 Thread Tile',g:7809.629,p:54.05078,desc:'每线程沿 M 方向计算多个输出。',change:'扩大 BM/BN、减小 BK，并用寄存器保存多个 partial sum。',insight:'一个 B 值可服务多个输出 FMA，减少重复 SMEM load；tile 不能无限增大，否则并发 block 与 occupancy 会下降。',mechanisms:[1,1,1],stage:2,code:'TM outputs / thread'},
+ {n:4,name:'二维 Thread Tile',g:12251.3,p:84.79179,desc:'每线程计算二维输出小块。',change:'A/B 寄存器片段形成小型 outer product。',insight:'二维 tile 同时复用 A 与 B，比一维 tile 更充分地提高每次 SMEM 读取对应的 FMA 数量。',mechanisms:[1,1,1],stage:2,code:'TM×TN outputs / thread'},
+ {n:5,name:'寄存器缓存',g:12177.95,p:84.28412,desc:'显式缓存 A/B fragment。',change:'将反复使用的标量保留在 register file。',insight:'该实测点略低于 kernel 4，说明“加入一种优化”不保证孤立地提升性能；寄存器压力与指令调度也会改变。',mechanisms:[1,1,1],stage:2,code:'reg_a[TM] · reg_b[TN]'},
+ {n:6,name:'FLOAT4 向量访存',g:13161.49,p:91.09125,desc:'128-bit 对齐向量化加载。',change:'一次指令搬运 4 个 FP32，降低内存指令数量。',insight:'向量访存依赖地址对齐；它改善事务和指令效率，但不能替代前面已经建立的数据复用层级。',mechanisms:[1,1,1],stage:3,code:'float4 · 128-bit'},
+ {n:7,name:'双缓存预取',g:13634.98,p:94.36832,desc:'加载下一 tile 与当前计算重叠。',change:'Ping-pong buffer 隐藏 GMEM→SMEM 延迟。',insight:'最终核达到 cuBLAS 的 94.37%。双缓存用更多片上容量换流水并行，适合已有高复用、计算时间足够覆盖加载的主循环。',mechanisms:[1,1,1],stage:3,code:'load(k+1) ∥ compute(k)'}
 ];
 const cublas=14448.69,$=id=>document.getElementById(id);let selected=0,timer=null;
 function drawChart(){
@@ -117,7 +119,7 @@ function renderSteps(){
 function select(i){selected=i;const k=kernels[i],prev=i?kernels[i-1]:null;renderSteps();drawChart();
  $('title').textContent=`Kernel ${k.n} · ${k.name}`;$('summary').textContent=k.desc;$('gflops').textContent=`${(k.g/1000).toFixed(2)} T`;
  $('ratio').textContent=`${k.p.toFixed(2)}%`;$('gain').textContent=prev?`较上一级 ${(k.g/prev.g).toFixed(2)}×`:'性能基线';$('change').textContent=k.change;$('insight').textContent=k.insight;
- ['gmem','smem','reg'].forEach((n,j)=>{$(n+'Bar').style.width=k.reuse[j]+'%';$(n+'Out').textContent=k.reuse[j]+'%'});
+ ['gmem','smem','reg'].forEach((n,j)=>{const active=k.mechanisms[j];$(n+'Bar').style.width=active?'100%':'0%';$(n+'Out').textContent=active?'已引入':'未引入'});
  document.querySelectorAll('.box').forEach((b,j)=>b.classList.toggle('active',j<=k.stage));$('globalCode').textContent=i===0?'2 GMEM loads / FMA':'cooperative tile loads';$('regCode').textContent=i<2?'scalar accumulator':k.code;$('pipeCode').textContent=i<5?'尚未引入':k.code;
 }
 function options(){return kernels.map((k,i)=>`<option value="${i}">K${k.n} ${k.name}</option>`).join('')}

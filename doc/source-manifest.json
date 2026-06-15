@@ -1,0 +1,30 @@
+{
+  "algorithm": "sha256",
+  "generated": "2026-06-15",
+  "files": [
+    {
+      "path": "cutlass-hierarchy/notebooklm-export.md",
+      "sha256": "2c3815ff6c8f6db3c3dca4f13f6a8db7a581e96efcdc7892b181b2dbaf8597ac"
+    },
+    {
+      "path": "cutlass-hierarchy/original.md",
+      "sha256": "c2d74770d283beb12a0f4b8a26b11d81767200d06a89dcae2e0f9b50ef06ef18"
+    },
+    {
+      "path": "sgemm-practice/notebooklm-export.md",
+      "sha256": "871b2ddf9d45049f0ca97df47c26fbd265385480587dbef7fc14664175d0adb1"
+    },
+    {
+      "path": "sgemm-practice/original.md",
+      "sha256": "2212e5fec2f21baf144d6c52852817cc2d9acef189af68cc2d7e566484b7a20d"
+    },
+    {
+      "path": "cuda-matmul-worklog/notebooklm-export.md",
+      "sha256": "6bf5775fcb575af5a5696c345b3c7bc4ef40ebf2f64739d6d34076d298ad4e28"
+    },
+    {
+      "path": "cuda-matmul-worklog/original.md",
+      "sha256": "d534f962030a10fe93e65ffcf304bf40e79863b8d21cd41491e992c4df065f2f"
+    }
+  ]
+}

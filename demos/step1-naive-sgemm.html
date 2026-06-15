@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>步骤 1 演示：Naive SGEMM</title>
   <style>
     :root {
@@ -11,10 +12,10 @@
       --border: rgba(255,255,255,0.08);
       --text: #ecf5ff;
       --muted: #92a9c3;
-      --green: #78ff7a;
-      --cyan: #59d8ff;
-      --orange: #ffb454;
-      --pink: #ff6c91;
+      --green: var(--semantic-register);
+      --cyan: var(--semantic-smem);
+      --orange: var(--semantic-math);
+      --pink: var(--semantic-gmem);
     }
     * { box-sizing: border-box; }
     body {

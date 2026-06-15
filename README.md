@@ -36,3 +36,16 @@
 ```bash
 python3 -m http.server 4173
 ```
+
+## 质量与回归
+
+- 需求、数据等级和视觉语义：`doc/requirements.md`
+- 验证方法：`doc/verification.md`
+- 来源文件完整性：`doc/source-manifest.json`
+- 遗留问题：`doc/legacy_issues.md`
+
+一键回归：
+
+```bash
+./scripts/test.sh
+```

@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>CUDA Matmul Worklog 性能实验室</title>
   <style>
-    :root{--paper:#f7f4ee;--ink:#20231f;--muted:#62685f;--line:#cfd2c9;--surface:#fffdfa;--lime:#90b62d;--blue:#2775a7;--red:#c65343;--amber:#c7831e;--purple:#76569b}
+    :root{--paper:#f7f4ee;--ink:#20231f;--muted:#62685f;--line:#cfd2c9;--surface:#fffdfa;--lime:var(--semantic-register);--blue:var(--semantic-smem);--red:var(--semantic-gmem);--amber:var(--semantic-math);--purple:var(--semantic-warp)}
     *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
     button,input{font:inherit}.shell{width:min(1320px,calc(100% - 32px));margin:auto;padding:24px 0 60px}a{color:var(--blue)}
     .back{text-decoration:none;font-weight:800}header{display:grid;grid-template-columns:1fr auto;align-items:end;gap:25px;padding:14px 0 22px;border-bottom:2px solid var(--ink)}

@@ -4,12 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../assets/semantic-colors.css">
   <title>步骤 5 演示：Warp Tiling 与 CUTLASS 层级</title>
   <style>
-    :root{--text:#edf6ff;--muted:#91a8c1;--border:rgba(255,255,255,.09);--block:#59d6ff;--warp:#b58cff;--thread:#78ff7a;--pipe:#ffb454;--bad:#ff6f7e}
+    :root{--text:#edf6ff;--muted:#91a8c1;--border:rgba(255,255,255,.09);--block:var(--semantic-smem);--warp:var(--semantic-warp);--thread:var(--semantic-register);--pipe:var(--semantic-math);--bad:var(--semantic-gmem)}
     *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111c,#050b13);color:var(--text)}
     .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
-    h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:end}label{display:grid;gap:6px;color:var(--muted)}
+    h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;align-items:end}label{display:grid;gap:6px;color:var(--muted)}
     select{width:100%;padding:9px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text)}.layout{display:grid;grid-template-columns:1.3fr .8fr;gap:16px}.layout>*{min-width:0}
     .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tabs button{min-height:42px;padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.03);color:var(--muted);cursor:pointer}.tabs button.active{color:var(--text);border-color:var(--thread)}
     svg{display:block;width:100%;max-width:100%;height:auto;min-height:460px;background:rgba(255,255,255,.02);border-radius:7px}.tile{cursor:pointer;touch-action:manipulation}.tile:focus{outline:none}.tile:focus-visible rect{stroke:#fff;stroke-width:6}
@@ -23,7 +24,7 @@
 <main class="page">
   <section class="panel">
     <h1>步骤 5：Threadblock → Warp → 32 Lane Thread Tiles</h1>
-    <p>选择 policy 后，点击任意 warp，再进入 Thread Tile 层查看该 warp 内 32 个 lane 的 accumulator 所有权。资源指标区分 A/B 主循环强度和包含最终 C 读写的完整 tile 强度。</p>
+    <p>选择 policy 后，点击任意 warp，再进入 Thread Tile 层查看该 warp 内 32 个 lane 的 accumulator 所有权。资源数字是指定架构下的静态上界估算，不代表编译器或运行时实测。</p>
     <div class="controls">
       <label>Block M<select id="bm"><option>64</option><option selected>128</option></select></label>
       <label>Block N<select id="bn"><option>64</option><option selected>128</option></select></label>
@@ -31,6 +32,7 @@
       <label>K Tile<select id="bk"><option selected>8</option><option>16</option><option>32</option></select></label>
       <label>完整 K<select id="totalK"><option>256</option><option selected>1024</option><option>4096</option></select></label>
       <label>流水<select id="buffer"><option value="1">单缓冲</option><option value="2" selected>双缓冲</option></select></label>
+      <label>资源架构<select id="architecture"><option value="ampere_a6000">Ampere A6000 示例</option><option value="ampere_generic">Ampere 通用估算</option></select></label>
     </div>
   </section>
   <div class="layout">
@@ -57,29 +59,26 @@
     </aside>
   </div>
 </main>
+<script src="../assets/gemm-policy.js"></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),levels=['Threadblock Tile','选择 Warp Tile','32 Lane / Thread Tile'];
 let selected=0,selectedWarp=0,selectedLane=0;
-function p(){return {bm:+$('bm').value,bn:+$('bn').value,w:+$('warp').value,bk:+$('bk').value,k:+$('totalK').value,buff:+$('buffer').value}}
+function p(){return {bm:+$('bm').value,bn:+$('bn').value,w:+$('warp').value,bk:+$('bk').value,k:+$('totalK').value,buff:+$('buffer').value,architecture:$('architecture').value}}
 function policy(){
-  const v=p(),warpRows=v.bm/v.w,warpCols=v.bn/v.w,warps=warpRows*warpCols,threads=warps*32;
-  const laneRows=4,laneCols=8,tm=v.w/laneRows,tn=v.w/laneCols,per=tm*tn;
-  const smem=(v.bm*v.bk+v.bn*v.bk)*4*v.buff,mainFlops=2*v.bm*v.bn*v.bk,mainBytes=(v.bm*v.bk+v.bn*v.bk)*4;
-  const fullFlops=2*v.bm*v.bn*v.k,fullBytes=(v.bm*v.k+v.bn*v.k+2*v.bm*v.bn)*4;
-  const regWork=per+v.buff*(tm+tn),smemBlocks=Math.floor(102400/smem),threadBlocks=Math.floor(2048/threads),regBlocks=Math.floor(65536/(regWork*threads));
-  const activeBlocks=Math.max(0,Math.min(32,smemBlocks,threadBlocks,regBlocks)),occupancy=Math.min(1,activeBlocks*threads/2048);
-  return {...v,warpRows,warpCols,warps,threads,laneRows,laneCols,tm,tn,per,smem,mainIntensity:mainFlops/mainBytes,fullIntensity:fullFlops/fullBytes,regWork,activeBlocks,occupancy};
+  const v=p(),laneRows=4,laneCols=8,tm=v.w/laneRows,tn=v.w/laneCols;
+  const result=GemmPolicy.evaluate({bm:v.bm,bn:v.bn,bk:v.bk,k:v.k,warpM:v.w,warpN:v.w,threadM:tm,threadN:tn,buffers:v.buff,architecture:v.architecture});
+  return {...v,...result,smem:result.smemBytes,per:result.outputPerThread,regWork:result.registerLowerBound,laneRows,laneCols,tm,tn};
 }
 function blockView(v){
-  const ww=560/v.warpCols,wh=310/v.warpRows;let s=`<rect x="55" y="45" width="650" height="400" rx="6" fill="#59d6ff18" stroke="#59d6ff" stroke-width="${selected===0?5:2}"/><text x="75" y="78" fill="#59d6ff" font-weight="700">Block C tile ${v.bm} × ${v.bn}</text>`;
-  for(let r=0;r<v.warpRows;r++)for(let c=0;c<v.warpCols;c++){const id=r*v.warpCols+c,x=100+c*ww,y=100+r*wh,active=id===selectedWarp;s+=`<g class="tile" tabindex="0" role="button" aria-label="选择 warp ${r},${c}" data-level="1" data-warp="${id}"><rect x="${x}" y="${y}" width="${ww-8}" height="${wh-8}" rx="4" fill="${active?'#b58cff38':'#b58cff12'}" stroke="${active?'#fff':'#b58cff'}" stroke-width="${active?4:2}"/><text x="${x+10}" y="${y+23}" fill="#d8c5ff">warp ${r},${c}</text><text x="${x+10}" y="${y+43}" fill="#aabbd0">${v.w}×${v.w}</text></g>`}
+  const ww=560/v.warpCols,wh=310/v.warpRows;let s=`<rect x="55" y="45" width="650" height="400" rx="6" fill="#3B82F618" stroke="#3B82F6" stroke-width="${selected===0?5:2}"/><text x="75" y="78" fill="#3B82F6" font-weight="700">Block C tile ${v.bm} × ${v.bn}</text>`;
+  for(let r=0;r<v.warpRows;r++)for(let c=0;c<v.warpCols;c++){const id=r*v.warpCols+c,x=100+c*ww,y=100+r*wh,active=id===selectedWarp;s+=`<g class="tile" tabindex="0" role="button" aria-label="选择 warp ${r},${c}" data-level="1" data-warp="${id}"><rect x="${x}" y="${y}" width="${ww-8}" height="${wh-8}" rx="4" fill="${active?'#8B5CF638':'#8B5CF612'}" stroke="${active?'#fff':'#8B5CF6'}" stroke-width="${active?4:2}"/><text x="${x+10}" y="${y+23}" fill="#C4B5FD">warp ${r},${c}</text><text x="${x+10}" y="${y+43}" fill="#aabbd0">${v.w}×${v.w}</text></g>`}
   return s;
 }
 function laneView(v){
   const wr=Math.floor(selectedWarp/v.warpCols),wc=selectedWarp%v.warpCols,x0=80,y0=80,w=600,h=340,cw=w/v.laneCols,ch=h/v.laneRows;
-  let s=`<text x="80" y="52" fill="#b58cff" font-weight="700">warp ${wr},${wc}: ${v.w}×${v.w} C tile → 32 lanes</text>`;
-  for(let lane=0;lane<32;lane++){const r=Math.floor(lane/v.laneCols),c=lane%v.laneCols,x=x0+c*cw,y=y0+r*ch,active=lane===selectedLane;s+=`<g class="tile" tabindex="0" role="button" aria-label="选择 lane ${lane}" data-level="2" data-lane="${lane}"><rect x="${x+3}" y="${y+3}" width="${cw-6}" height="${ch-6}" rx="4" fill="${active?'#78ff7a42':'#78ff7a16'}" stroke="${active?'#fff':'#78ff7a'}" stroke-width="${active?4:1.5}"/><text x="${x+cw/2}" y="${y+ch/2-5}" text-anchor="middle" fill="#edf6ff">lane ${lane}</text><text x="${x+cw/2}" y="${y+ch/2+16}" text-anchor="middle" fill="#78ff7a">${v.tm}×${v.tn}</text></g>`}
+  let s=`<text x="80" y="52" fill="#8B5CF6" font-weight="700">warp ${wr},${wc}: ${v.w}×${v.w} C tile → 32 lanes</text>`;
+  for(let lane=0;lane<32;lane++){const r=Math.floor(lane/v.laneCols),c=lane%v.laneCols,x=x0+c*cw,y=y0+r*ch,active=lane===selectedLane;s+=`<g class="tile" tabindex="0" role="button" aria-label="选择 lane ${lane}" data-level="2" data-lane="${lane}"><rect x="${x+3}" y="${y+3}" width="${cw-6}" height="${ch-6}" rx="4" fill="${active?'#22C55E42':'#22C55E16'}" stroke="${active?'#fff':'#22C55E'}" stroke-width="${active?4:1.5}"/><text x="${x+cw/2}" y="${y+ch/2-5}" text-anchor="middle" fill="#edf6ff">lane ${lane}</text><text x="${x+cw/2}" y="${y+ch/2+16}" text-anchor="middle" fill="#22C55E">${v.tm}×${v.tn}</text></g>`}
   return s;
 }
 function render(){
@@ -95,10 +94,10 @@ function render(){
   const wr=Math.floor(selectedWarp/v.warpCols),wc=selectedWarp%v.warpCols;
   const texts=[`Block tile 为 ${v.bm}×${v.bn}，每个 K tile 搬运 ${v.bm}×${v.bk} 的 A 和 ${v.bk}×${v.bn} 的 B。A/B 主循环强度 ${v.mainIntensity.toFixed(1)} FLOP/B 与 BK 无关。`,`当前选中 warp ${wr},${wc}。${v.warps} 个 warp 无重叠地覆盖 C tile；点击其他 warp 可改变下钻对象。`,`warp ${wr},${wc} 内 32 个 lane 按 4×8 逻辑网格拥有各自 ${v.tm}×${v.tn} accumulator。当前 lane ${selectedLane} 持有 ${v.per} 个 C 元素。真实 GPU 的 MMA fragment 坐标会随架构和指令发生交织重排，此处仅表示逻辑所有权和面积。`];
   $('explain').textContent=texts[selected];[...$('pipeline').children].forEach((x,i)=>x.classList.toggle('active',v.buff===2||i===selected));
-  const risks=[];if(v.threads>1024)risks.push('线程数超过 1024/block');if(v.smem>48*1024)risks.push('SMEM 超过常见 48 KiB/block 默认上限');if(v.regWork>255)risks.push('估算寄存器工作集超过常见单线程上限');if(v.activeBlocks===0)risks.push('资源模型无法驻留一个 block');
-  $('risk').className=risks.length?'risk':'';$('risk').textContent=risks.length?`Policy 风险：${risks.join('；')}。`:'资源估算可驻留；实际 occupancy 仍受编译器寄存器分配、架构限制和 bank conflict 影响。';
+  const risks=[...v.errors,...v.warnings];
+  $('risk').className=risks.length?'risk':'';$('risk').textContent=risks.length?`Policy 风险：${risks.join('；')}。`:`${v.architecture.label}：资源估算可驻留；实际 occupancy 仍受编译器寄存器分配、架构限制和 bank conflict 影响。`;
 }
-['bm','bn','warp','bk','totalK','buffer'].forEach(id=>$(id).addEventListener('change',()=>{selectedWarp=0;selectedLane=0;render()}));render();
+['bm','bn','warp','bk','totalK','buffer','architecture'].forEach(id=>$(id).addEventListener('change',()=>{selectedWarp=0;selectedLane=0;render()}));render();
 </script>
 </body>
 </html>
