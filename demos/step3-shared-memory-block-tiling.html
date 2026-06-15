@@ -6,30 +6,31 @@
   <link rel="icon" href="data:,">
   <title>步骤 3 演示：Shared Memory 与 Block Tiling</title>
   <style>
-    :root{--bg:#07111d;--panel:#102238;--text:#edf6ff;--muted:#91a8c2;--border:rgba(255,255,255,.09);--gmem:#59d6ff;--smem:#ffb454;--compute:#78ff7a;--sync:#ff6f91}
-    *{box-sizing:border-box}body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111d,#050b13);color:var(--text)}
-    .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{background:linear-gradient(180deg,rgba(18,39,63,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
-    h1,h2,h3{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
-    label{display:grid;gap:7px;color:var(--muted)}select,input[type=range]{width:100%;padding:10px;border:1px solid var(--border);background:#0b1929;color:var(--text);border-radius:6px;accent-color:var(--compute)}
-    button{padding:10px 14px;border-radius:6px;border:1px solid rgba(120,255,122,.35);background:rgba(120,255,122,.1);color:var(--text);font-weight:700;cursor:pointer}
-    .layout{display:grid;grid-template-columns:1.35fr .85fr;gap:16px}.viz{display:grid;grid-template-columns:1fr 1fr;gap:14px}.memory{padding:14px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.025)}
-    .matrix{display:grid;gap:4px;aspect-ratio:1}.cell{display:grid;place-items:center;min-width:0;border:1px solid rgba(255,255,255,.08);border-radius:3px;background:rgba(255,255,255,.035);font-size:clamp(.62rem,1.4vw,.82rem);transition:background .15s,transform .15s}
-    .cell.tile{background:rgba(89,214,255,.14);border-color:rgba(89,214,255,.45)}.cell.loaded{background:rgba(255,180,84,.22);border-color:var(--smem)}.cell.active{background:rgba(120,255,122,.25);border-color:var(--compute);transform:scale(.94)}.cell.out{background:rgba(120,255,122,.13);border-color:rgba(120,255,122,.35)}
-    .phasebar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px}.phase{padding:9px 6px;border:1px solid var(--border);border-radius:5px;text-align:center;color:var(--muted);font-size:.82rem}.phase.active{color:var(--text);border-color:var(--sync);background:rgba(255,111,145,.12)}
-    .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--compute);font-size:1.3rem;margin-top:4px}
-    .callout{margin-top:12px;padding:13px;border-left:4px solid var(--compute);background:rgba(120,255,122,.07);color:var(--text);line-height:1.55}.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;color:var(--muted);font-size:.85rem}.legend i{display:inline-block;width:10px;height:10px;margin-right:5px}
-    @media(max-width:900px){.controls,.layout{grid-template-columns:1fr}.viz{grid-template-columns:1fr 1fr}}@media(max-width:520px){.viz,.stats,.phasebar{grid-template-columns:1fr}.matrix{aspect-ratio:auto;min-height:280px}}
+    :root{--text:#edf6ff;--muted:#91a8c2;--border:rgba(255,255,255,.09);--gmem:#59d6ff;--smem:#ffb454;--compute:#78ff7a;--sync:#ff6f91}
+    *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07111d,#050b13);color:var(--text)}
+    .page{width:min(1240px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(18,39,63,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
+    h1,h2,h3{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:end}
+    label{display:grid;gap:7px;color:var(--muted)}select{width:100%;padding:10px;border:1px solid var(--border);background:#0b1929;color:var(--text);border-radius:6px}
+    button{min-height:42px;padding:10px 14px;border-radius:6px;border:1px solid rgba(120,255,122,.35);background:rgba(120,255,122,.1);color:var(--text);font-weight:700;cursor:pointer}
+    .layout{display:grid;grid-template-columns:1.35fr .85fr;gap:16px}.layout>*{min-width:0}.viz{display:grid;grid-template-columns:1fr 1fr;gap:14px}.memory{min-width:0;padding:14px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.025)}
+    .matrix{display:grid;gap:4px;aspect-ratio:1;max-width:100%}.cell{display:grid;place-items:center;min-width:0;border:1px solid rgba(255,255,255,.08);border-radius:3px;background:rgba(255,255,255,.035);font-size:clamp(.58rem,1.3vw,.8rem);transition:background .15s,transform .15s}
+    .cell.tile{background:rgba(89,214,255,.14);border-color:rgba(89,214,255,.45)}.cell.loaded{background:rgba(255,180,84,.22);border-color:var(--smem)}.cell.active{background:rgba(120,255,122,.25);border-color:var(--compute);transform:scale(.94)}.cell.out{background:rgba(120,255,122,.13);border-color:rgba(120,255,122,.35)}.cell.zero{color:var(--sync);background:rgba(255,111,145,.09)}
+    .phasebar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:14px}.phase{padding:9px 5px;border:1px solid var(--border);border-radius:5px;text-align:center;color:var(--muted);font-size:.78rem}.phase.active{color:var(--text);border-color:var(--sync);background:rgba(255,111,145,.12)}
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--compute);font-size:1.25rem;margin-top:4px}
+    .callout{margin-top:12px;padding:13px;border-left:4px solid var(--compute);background:rgba(120,255,122,.07);line-height:1.55}.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;color:var(--muted);font-size:.85rem}.legend i{display:inline-block;width:10px;height:10px;margin-right:5px}
+    @media(max-width:900px){.controls,.layout{grid-template-columns:1fr}.viz{grid-template-columns:1fr 1fr}}@media(max-width:520px){.viz,.stats,.phasebar{grid-template-columns:1fr}.matrix{aspect-ratio:auto;min-height:260px}}
   </style>
 </head>
 <body>
 <main class="page">
   <section class="panel">
     <h1>步骤 3：Shared Memory Caching & Block Tiling</h1>
-    <p>一个 thread block 协作把 A/B tile 从 GMEM 搬到 SMEM，经过同步后重复消费。切换阶段，观察同一批输入如何服务整个 C tile，而不是被每个输出线程重复读取。</p>
+    <p>选择输出 block 和 K tile 轮次，再推进五个阶段。演示同时覆盖 M/N 输出边界、K 维尾块补零，以及覆盖 SMEM 前必须执行的第二次同步。</p>
     <div class="controls">
       <label>矩阵规模 N<select id="size"><option>8</option><option selected>10</option><option>12</option></select></label>
       <label>Block Tile<select id="tile"><option>2</option><option selected>4</option><option>5</option></select></label>
-      <label>Block 位置<select id="position"><option value="center">内部 tile</option><option value="edge">右下边界 tile</option></select></label>
+      <label>Block 位置<select id="position"><option value="center">首个完整 tile</option><option value="edge">右下边界 tile</option></select></label>
+      <label>K tile 轮次<select id="kRound"></select></label>
       <button id="next">下一阶段</button>
     </div>
   </section>
@@ -37,13 +38,13 @@
     <section class="panel">
       <div class="phasebar" id="phases"></div>
       <div class="viz">
-        <div class="memory"><h3>A：行 tile</h3><div class="matrix" id="a"></div></div>
-        <div class="memory"><h3>B：列 tile</h3><div class="matrix" id="b"></div></div>
+        <div class="memory"><h3>A：行 tile × K tile</h3><div class="matrix" id="a"></div></div>
+        <div class="memory"><h3>B：K tile × 列 tile</h3><div class="matrix" id="b"></div></div>
         <div class="memory"><h3>SMEM：As</h3><div class="matrix" id="as"></div></div>
         <div class="memory"><h3>SMEM：Bs</h3><div class="matrix" id="bs"></div></div>
         <div class="memory" style="grid-column:1/-1"><h3>C：当前 block 输出 tile</h3><div class="matrix" id="c"></div></div>
       </div>
-      <div class="legend"><span><i style="background:var(--gmem)"></i>GMEM 当前 tile</span><span><i style="background:var(--smem)"></i>已装入 SMEM</span><span><i style="background:var(--compute)"></i>当前复用元素/输出</span><span><i style="background:var(--sync)"></i>同步屏障</span></div>
+      <div class="legend"><span><i style="background:var(--gmem)"></i>GMEM 当前 tile</span><span><i style="background:var(--smem)"></i>已装入 SMEM</span><span><i style="background:var(--compute)"></i>当前复用/输出</span><span><i style="background:var(--sync)"></i>补零或同步</span></div>
     </section>
     <aside class="panel">
       <h2>实时资源模型</h2>
@@ -52,51 +53,57 @@
         <div class="stat"><span>Tiled GMEM 标量读取</span><b id="tiled"></b></div>
         <div class="stat"><span>输入复用倍数</span><b id="reuse"></b></div>
         <div class="stat"><span>每轮 SMEM</span><b id="smem"></b></div>
-        <div class="stat"><span>K tile 轮数</span><b id="rounds"></b></div>
+        <div class="stat"><span>当前 K 轮</span><b id="rounds"></b></div>
         <div class="stat"><span>有效输出线程</span><b id="threads"></b></div>
       </div>
       <div class="callout" id="explain" aria-live="polite"></div>
-      <p>边界 tile 会产生无效线程和补零加载。真实 kernel 必须在读取 A/B 和写回 C 时检查矩阵边界。</p>
+      <p>真实 kernel 在每轮读取 A/B 时检查 M/N/K 边界，并在所有线程完成当前 tile 计算后同步，才能安全覆盖 As/Bs。</p>
     </aside>
   </div>
 </main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const phaseNames=['协作加载','__syncthreads()','SMEM 复用计算','写回 C'];
+const phaseNames=['协作加载','加载后同步','SMEM 计算','计算后同步','下一轮/写回'];
 let phase=0;
+function syncRounds(){
+  const n=+$('size').value,t=+$('tile').value,count=Math.ceil(n/t),old=Math.min(+$('kRound').value||0,count-1);
+  $('kRound').innerHTML=Array.from({length:count},(_,i)=>`<option value="${i}">${i+1} / ${count}</option>`).join('');$('kRound').value=old;
+}
 function params(){
-  const n=+$('size').value,t=+$('tile').value,edge=$('position').value==='edge';
-  const start=edge?Math.floor((n-1)/t)*t:Math.min(t,Math.max(0,n-t));
-  return {n,t,row:start,col:start,validRows:Math.min(t,n-start),validCols:Math.min(t,n-start)};
+  const n=+$('size').value,t=+$('tile').value,edge=$('position').value==='edge',round=+$('kRound').value;
+  const start=edge?Math.floor((n-1)/t)*t:0,kStart=round*t;
+  return {n,t,row:start,col:start,round,kStart,roundCount:Math.ceil(n/t),validRows:Math.min(t,n-start),validCols:Math.min(t,n-start),validK:Math.min(t,n-kStart)};
 }
 function cellGrid(el,rows,cols,fn){
-  el.style.gridTemplateColumns=`repeat(${cols},1fr)`;el.innerHTML='';
+  el.style.gridTemplateColumns=`repeat(${cols},minmax(0,1fr))`;el.innerHTML='';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const x=document.createElement('div'),v=fn(r,c);x.className=`cell ${v.cls||''}`;x.textContent=v.text;el.appendChild(x)}
 }
 function render(){
-  const p=params(),activeK=Math.min(p.t-1,1);
+  const p=params(),activeK=Math.min(p.validK-1,1),loaded=phase>=1;
   $('phases').innerHTML=phaseNames.map((x,i)=>`<div class="phase ${i===phase?'active':''}">${i+1}. ${x}</div>`).join('');
-  cellGrid($('a'),p.n,p.n,(r,c)=>({text:`${r},${c}`,cls:r>=p.row&&r<p.row+p.validRows&&c<p.t?'tile':''}));
-  cellGrid($('b'),p.n,p.n,(r,c)=>({text:`${r},${c}`,cls:r<p.t&&c>=p.col&&c<p.col+p.validCols?'tile':''}));
-  cellGrid($('as'),p.t,p.t,(r,c)=>({text:r<p.validRows?`A${p.row+r},${c}`:'0',cls:phase>=1?'loaded':phase===0?'active':''}));
-  cellGrid($('bs'),p.t,p.t,(r,c)=>({text:c<p.validCols?`B${r},${p.col+c}`:'0',cls:phase>=1?'loaded':phase===0?'active':''}));
-  cellGrid($('c'),p.t,p.t,(r,c)=>({text:r<p.validRows&&c<p.validCols?`C${p.row+r},${p.col+c}`:'越界',cls:r<p.validRows&&c<p.validCols?(phase>=2?'out':''):'',activeK}));
-  if(phase===2){[...$('as').children].forEach((x,i)=>{if(i%p.t===activeK)x.classList.add('active')});[...$('bs').children].forEach((x,i)=>{if(Math.floor(i/p.t)===activeK)x.classList.add('active')})}
-  const outputs=p.validRows*p.validCols,naive=2*outputs*p.n,tiled=p.validRows*p.n+p.validCols*p.n;
-  $('naive').textContent=naive.toLocaleString();$('tiled').textContent=tiled.toLocaleString();
-  $('reuse').textContent=`${(naive/tiled).toFixed(1)}×`;$('smem').textContent=`${2*p.t*p.t*4} B`;
-  $('rounds').textContent=String(Math.ceil(p.n/p.t));$('threads').textContent=`${outputs} / ${p.t*p.t}`;
+  cellGrid($('a'),p.n,p.n,(r,c)=>({text:`${r},${c}`,cls:r>=p.row&&r<p.row+p.validRows&&c>=p.kStart&&c<p.kStart+p.validK?'tile':''}));
+  cellGrid($('b'),p.n,p.n,(r,c)=>({text:`${r},${c}`,cls:r>=p.kStart&&r<p.kStart+p.validK&&c>=p.col&&c<p.col+p.validCols?'tile':''}));
+  cellGrid($('as'),p.t,p.t,(r,c)=>{const valid=r<p.validRows&&c<p.validK;return {text:valid?`A${p.row+r},${p.kStart+c}`:'0',cls:valid?(loaded?'loaded':'active'):'zero'}});
+  cellGrid($('bs'),p.t,p.t,(r,c)=>{const valid=r<p.validK&&c<p.validCols;return {text:valid?`B${p.kStart+r},${p.col+c}`:'0',cls:valid?(loaded?'loaded':'active'):'zero'}});
+  cellGrid($('c'),p.t,p.t,(r,c)=>({text:r<p.validRows&&c<p.validCols?`C${p.row+r},${p.col+c}`:'越界',cls:r<p.validRows&&c<p.validCols&&phase>=2?'out':''}));
+  if(phase===2&&activeK>=0){[...$('as').children].forEach((x,i)=>{if(i%p.t===activeK)x.classList.add('active')});[...$('bs').children].forEach((x,i)=>{if(Math.floor(i/p.t)===activeK)x.classList.add('active')})}
+  const outputs=p.validRows*p.validCols,naive=2*outputs*p.n,tiled=(p.validRows+p.validCols)*p.n;
+  $('naive').textContent=naive.toLocaleString();$('tiled').textContent=tiled.toLocaleString();$('reuse').textContent=`${(naive/tiled).toFixed(1)}×`;
+  $('smem').textContent=`${2*p.t*p.t*4} B`;$('rounds').textContent=`${p.round+1}/${p.roundCount}，有效 K=${p.validK}/${p.t}`;$('threads').textContent=`${outputs} / ${p.t*p.t}`;
+  const last=p.round===p.roundCount-1;
   const messages=[
-    `阶段 1：${p.t*p.t*2} 个 tile 槽位由 block 内线程协作加载。边界外元素按 0 处理。`,
-    '阶段 2：所有线程必须到达同步屏障，保证 As/Bs 完整可见；缺少同步会读到未写完的数据。',
-    `阶段 3：每个输入在当前 tile 内最多被 ${p.t} 个输出线程复用，GMEM 读取从 ${naive} 降至 ${tiled}。`,
-    `阶段 4：${outputs} 个有效线程写回各自的 C 元素；边界 block 的其余线程禁止越界写。`
+    `阶段 1：加载 K=[${p.kStart}, ${p.kStart+p.t-1}]。有效 K 槽 ${p.validK}/${p.t}，其余槽补 0。`,
+    '阶段 2：第一次 __syncthreads() 保证 As/Bs 完整可见，然后所有线程才能读取当前 tile。',
+    `阶段 3：当前 ${p.validK} 个 K 元素参与 partial sum；每个有效输入最多被 ${p.t} 个输出线程复用。`,
+    '阶段 4：第二次 __syncthreads() 保证所有线程读完当前 As/Bs，避免快线程提前覆盖下一轮数据。',
+    last?`阶段 5：K 主循环完成，${outputs} 个有效线程写回 C；无效线程禁止越界写。`:`阶段 5：当前 partial sum 保留在寄存器，随后进入第 ${p.round+2} 个 K tile。`
   ];$('explain').textContent=messages[phase];
 }
-$('next').addEventListener('click',()=>{phase=(phase+1)%4;render()});
-['size','tile','position'].forEach(id=>$(id).addEventListener('change',()=>{phase=0;render()}));
-render();
+$('next').addEventListener('click',()=>{if(phase===4){const p=params();$('kRound').value=(p.round+1)%p.roundCount;phase=0}else phase++;render()});
+['size','tile'].forEach(id=>$(id).addEventListener('change',()=>{phase=0;syncRounds();render()}));
+['position','kRound'].forEach(id=>$(id).addEventListener('change',()=>{phase=0;render()}));
+syncRounds();render();
 </script>
 </body>
 </html>

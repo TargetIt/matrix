@@ -276,13 +276,13 @@
           </div>
         </div>
         <div class="chart-card">
-          <p class="mini-title">性能爬坡路线（示意）</p>
+          <p class="mini-title">RTX 3090 实测性能 / cuBLAS</p>
           <div class="bars" id="perf-bars">
-            <div class="bar-row"><span>Naive SGEMM</span><div class="bar-track"><div class="bar-fill" data-width="12"></div></div><strong>~12%</strong></div>
-            <div class="bar-row"><span>Coalesced GMEM</span><div class="bar-track"><div class="bar-fill" data-width="24"></div></div><strong>~24%</strong></div>
-            <div class="bar-row"><span>SMEM + Block Tiling</span><div class="bar-track"><div class="bar-fill" data-width="56"></div></div><strong>~56%</strong></div>
-            <div class="bar-row"><span>Vectorized Load</span><div class="bar-track"><div class="bar-fill" data-width="70"></div></div><strong>~70%</strong></div>
-            <div class="bar-row"><span>Warp / CUTLASS Hierarchy</span><div class="bar-track"><div class="bar-fill" data-width="88"></div></div><strong>~88%</strong></div>
+            <div class="bar-row"><span>K1 Naive</span><div class="bar-track"><div class="bar-fill" data-width="15.65657"></div></div><strong>15.7%</strong></div>
+            <div class="bar-row"><span>K2 SMEM Cache</span><div class="bar-track"><div class="bar-fill" data-width="29.18283"></div></div><strong>29.2%</strong></div>
+            <div class="bar-row"><span>K4 2D Thread Tile</span><div class="bar-track"><div class="bar-fill" data-width="84.79179"></div></div><strong>84.8%</strong></div>
+            <div class="bar-row"><span>K6 FLOAT4</span><div class="bar-track"><div class="bar-fill" data-width="91.09125"></div></div><strong>91.1%</strong></div>
+            <div class="bar-row"><span>K7 Double Buffer</span><div class="bar-track"><div class="bar-fill" data-width="94.36832"></div></div><strong>94.4%</strong></div>
           </div>
         </div>
       </div>

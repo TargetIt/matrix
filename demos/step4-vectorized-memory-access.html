@@ -7,11 +7,11 @@
   <title>步骤 4 演示：Vectorized Memory Access</title>
   <style>
     :root{--bg:#07121d;--panel:#102338;--text:#edf6ff;--muted:#91a9c1;--border:rgba(255,255,255,.09);--scalar:#59d6ff;--vector:#78ff7a;--tail:#ffb454;--bad:#ff6f7e}
-    *{box-sizing:border-box}body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07121d,#050b13);color:var(--text)}
-    .page{width:min(1200px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
+    *{box-sizing:border-box}body{margin:0;overflow-x:hidden;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#07121d,#050b13);color:var(--text)}
+    .page{width:min(1200px,calc(100vw - 24px));margin:auto;padding:24px 0 40px}.panel{min-width:0;overflow-wrap:anywhere;background:linear-gradient(180deg,rgba(17,38,61,.97),rgba(8,17,29,.98));border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
     h1,h2{margin-top:0}p{color:var(--muted);line-height:1.65}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end}label{display:grid;gap:7px;color:var(--muted)}
     select,input{width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);background:#0a1929;color:var(--text);accent-color:var(--vector)}
-    .layout{display:grid;grid-template-columns:1.35fr .75fr;gap:16px}.strip{display:grid;grid-template-columns:repeat(32,1fr);gap:3px;margin:14px 0 20px}.word{height:38px;display:grid;place-items:center;border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.035);font-size:.7rem}.word.vector{background:rgba(120,255,122,.17);border-color:rgba(120,255,122,.5)}.word.scalar{background:rgba(89,214,255,.17);border-color:rgba(89,214,255,.5)}.word.tail{background:rgba(255,180,84,.18);border-color:rgba(255,180,84,.55)}.word.padding{opacity:.25}
+    .layout{display:grid;grid-template-columns:1.35fr .75fr;gap:16px}.layout>*{min-width:0}.strip{display:grid;grid-template-columns:repeat(32,minmax(0,1fr));gap:3px;margin:14px 0 20px}.word{height:38px;display:grid;place-items:center;min-width:0;border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.035);font-size:.7rem}.word.vector{background:rgba(120,255,122,.17);border-color:rgba(120,255,122,.5)}.word.scalar{background:rgba(89,214,255,.17);border-color:rgba(89,214,255,.5)}.word.tail{background:rgba(255,180,84,.18);border-color:rgba(255,180,84,.55)}.word.padding{opacity:.25}
     .ops{display:flex;flex-wrap:wrap;gap:6px}.op{padding:7px 9px;border-radius:4px;border:1px solid var(--border);font-size:.78rem}.op.v{border-color:var(--vector);color:var(--vector)}.op.s{border-color:var(--scalar);color:var(--scalar)}.op.t{border-color:var(--tail);color:var(--tail)}
     .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{padding:13px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.035)}.stat b{display:block;color:var(--vector);font-size:1.3rem;margin-top:4px}.callout{margin-top:12px;padding:13px;border-left:4px solid var(--vector);background:rgba(120,255,122,.07);line-height:1.55}.warning{border-left-color:var(--bad);background:rgba(255,111,126,.08)}
     table{width:100%;border-collapse:collapse;margin-top:14px}th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left}th{color:var(--muted)}
@@ -64,7 +64,7 @@ function model(){
   return {w,offset,count,base,lead,vec,tail,inst:lead+vec+tail,txn,eff:count*4/(txn*128)};
 }
 function render(){
-  const m=model(),shown=Math.min(128,m.offset+m.count+2);$('offsetOut').textContent=`${m.offset}（${m.offset*4}B）`;$('countOut').textContent=String(m.count);
+  const m=model(),shown=m.offset+m.count+2;$('offsetOut').textContent=`${m.offset}（${m.offset*4}B）`;$('countOut').textContent=String(m.count);
   $('strip').innerHTML='';
   for(let i=0;i<shown;i++){const x=document.createElement('div');x.className='word';x.textContent=i;if(i<m.offset||i>=m.offset+m.count)x.classList.add('padding');else{const local=i-m.offset;if(local<m.lead)x.classList.add('scalar');else if(local<m.lead+m.vec*m.w)x.classList.add('vector');else x.classList.add('tail')}$('strip').appendChild(x)}
   const ops=[];for(let i=0;i<m.lead;i++)ops.push({t:'s',x:`S ${m.offset+i}`});for(let i=0;i<m.vec;i++)ops.push({t:'v',x:`V${m.w} ${m.offset+m.lead+i*m.w}-${m.offset+m.lead+(i+1)*m.w-1}`});for(let i=0;i<m.tail;i++)ops.push({t:'t',x:`T ${m.offset+m.lead+m.vec*m.w+i}`});

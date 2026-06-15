@@ -10,22 +10,29 @@
 ## 已完成
 
 - [x] `LEGACY-001` 教程步骤 3：Shared Memory Caching & Block Tiling
-  - 完成内容：补充详细教程；新增 `demos/step3-shared-memory-block-tiling.html`。
-  - 覆盖范围：协作加载、同步屏障、SMEM 复用、写回和边界 tile。
-  - 验证结果：18 组矩阵规模/tile/位置组合通过；桌面与 390px 无溢出；无控制台错误；键盘阶段推进通过。
-  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
+  - 完成内容：协作加载、加载后同步、SMEM 计算、计算后同步、下一 K 轮/写回五阶段。
+  - 边界范围：M/N 输出边界、K-tail 和 SMEM 补零槽；block 坐标保持 tile 网格对齐。
+  - 验证结果：300 个参数/阶段状态通过；桌面与 390px 元素包围盒无越界；无运行错误。
+  - 完成提交：`fix: address CUDA tutorial review findings`。
 
 - [x] `LEGACY-002` 教程步骤 4：Vectorized Memory Access
-  - 完成内容：补充详细教程；新增 `demos/step4-vectorized-memory-access.html`。
-  - 覆盖范围：float/float2/float4、对齐前导、向量主体、标量尾部及 128B segment 利用率。
-  - 验证结果：288 组宽度/偏移/长度/基地址组合通过；桌面与 390px 无溢出；无控制台错误；键盘调参通过。
-  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
+  - 完成内容：float/float2/float4、对齐前导、向量主体、标量尾部及 128B segment 利用率。
+  - 修复内容：移除 128 元素绘制上限，最大 `offset=7,count=128` 时完整显示到索引 136。
+  - 验证结果：5,808 个参数组合通过；可视元素数量覆盖完整请求区间；390px 无越界。
+  - 完成提交：`fix: address CUDA tutorial review findings`。
 
 - [x] `LEGACY-003` 教程步骤 5：Warp Tiling & CUTLASS Hierarchy
-  - 完成内容：补充详细教程；新增 `demos/step5-warp-tiling-cutlass.html`。
-  - 覆盖范围：Threadblock/Warp/Thread 层级、线程映射、accumulator、SMEM、算术强度、单双缓冲和资源风险。
-  - 验证结果：48 组 policy 参数组合通过；桌面与 390px 无溢出；无控制台错误；层级键盘下钻通过。
-  - 完成提交：`feat: complete CUDA tutorial steps 3-5`。
+  - 完成内容：记录选中 warp，并按 4×8 lane 网格显示 32 个 thread accumulator tile。
+  - 公式范围：分别报告 A/B 主循环强度和包含最终 C 读写的完整 tile 强度；增加寄存器、active blocks 和 occupancy 估算。
+  - 可访问性：SVG 节点具备键盘事件和高对比 `:focus-visible`，移动端提供 44px 全宽文本层级按钮。
+  - 验证结果：144 个 policy 组合通过；主循环强度不随 BK 错误变化；390px 无越界。
+  - 完成提交：`fix: address CUDA tutorial review findings`。
+
+- [x] `LEGACY-004` 独立 Fail 复审
+  - 根页示意百分比已替换为 `sgemm-practice/original.md` 中 RTX 3090 实测数据。
+  - 390px 使用 `scrollWidth/clientWidth` 与全部可见元素包围盒双重验证，三个新增演示均无越界。
+  - Fail 报告中的移动端溢出未能复现；其余七项意见均已采纳修复。
+  - 处理记录：`review/20260614110501-independent.md`。
 
 ## 维护规则
 
