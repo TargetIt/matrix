@@ -245,6 +245,7 @@
       transition: background .18s, border-color .18s, transform .18s;
     }
     .cell.zero { color: #566a74; }
+    .cell.gmem-scope { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.45); }
     .cell.gmem-read { background: rgba(239,68,68,.28); border-color: var(--gmem); transform: scale(1.05); }
     .cell.smem-read { background: rgba(59,130,246,.28); border-color: var(--smem); }
     .cell.smem-write { background: rgba(59,130,246,.35); border-color: var(--smem); }
@@ -321,7 +322,7 @@
     .var span { color: var(--muted); font-size: 10px; display: block; }
     .var b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
     .chart { width: 100%; height: 188px; display: block; }
-    .legend { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; color: var(--muted); font-size: 12px; }
     .dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; }
     .compare-note { color: var(--muted); margin: 8px 0 0; }
     .source-note { color: var(--muted); margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 12px; }
@@ -434,6 +435,13 @@
       <div class="panel">
         <h2>内存与数据搬运</h2>
         <p class="sub">Global Memory → Shared Memory 协作加载过程。A/B/C 使用 16×16 数据。</p>
+        <div class="legend">
+          <span><i class="dot" style="background:rgba(124,58,237,.55)"></i>当前 tile</span>
+          <span><i class="dot" style="background:rgba(239,68,68,.18)"></i>线程完整访问范围</span>
+          <span><i class="dot" style="background:var(--gmem)"></i>当前 GMEM 读</span>
+          <span><i class="dot" style="background:var(--smem)"></i>SMEM 读写</span>
+          <span><i class="dot" style="background:var(--reg)"></i>线程负责输出</span>
+        </div>
         <div class="memory-flex">
           <div class="matrix-wrap"><div class="matrix-title"><b>Global A</b><small>row-major</small></div><div id="matrixA" class="matrix"></div></div>
           <div class="matrix-wrap"><div class="matrix-title"><b>Global B</b><small>row-major</small></div><div id="matrixB" class="matrix"></div></div>
@@ -811,41 +819,83 @@ function tileValues(matrix, rows, cols, transpose = false) {
   return out;
 }
 
+function loaderCoord() {
+  const v = cfg();
+  if (kernel().badges.float4) {
+    const aBlocksPerRow = Math.max(1, v.BK / 4);
+    const bBlocksPerRow = Math.max(1, v.BN / 4);
+    return {
+      aRow: Math.floor(state.thread / aBlocksPerRow) % Math.max(1, v.BM),
+      aCol: (state.thread % aBlocksPerRow) * 4,
+      bRow: Math.floor(state.thread / bBlocksPerRow) % Math.max(1, v.BK),
+      bCol: (state.thread % bBlocksPerRow) * 4
+    };
+  }
+  return {
+    aRow: Math.floor(state.thread / Math.max(1, v.BK)) % Math.max(1, v.BM),
+    aCol: state.thread % Math.max(1, v.BK),
+    bRow: Math.floor(state.thread / Math.max(1, v.BN)) % Math.max(1, v.BK),
+    bCol: state.thread % Math.max(1, v.BN)
+  };
+}
+
+function addThreadFullFootprint(sets, owned) {
+  for (const [r, col] of owned) {
+    for (let k = 0; k < K; k++) {
+      sets.scopeA.add(`${r},${k}`);
+      sets.scopeB.add(`${k},${col}`);
+    }
+  }
+}
+
+function addMatrixHit(set, r, col, rows, cols) {
+  if (r >= 0 && r < rows && col >= 0 && col < cols) set.add(`${r},${col}`);
+}
+
 // ── 活跃元素集合 ──
 function activeSets() {
   const v = cfg(), c = threadCoord(), s = curStage();
   const kIter = s.kIter || 0;
   const kVal = s.kVal || 0;
-  const sets = { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), vectorA: new Set(), vectorB: new Set() };
+  const sets = { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), scopeA: new Set(), scopeB: new Set(), vectorA: new Set(), vectorB: new Set() };
 
   // Owner & C output
   const own = c.owned.filter(([r, col]) => r < v.BM && col < v.BN);
   own.forEach(([r, col]) => { sets.owner.add(`${r},${col}`); sets.C.add(`${r},${col}`); });
+  addThreadFullFootprint(sets, own);
 
   // Tile boundaries
   for (let r = 0; r < v.BM; r++) for (let kk = 0; kk < v.BK; kk++) sets.tileA.add(`${r},${kVal + kk}`);
   for (let kk = 0; kk < v.BK; kk++) for (let col = 0; col < v.BN; col++) sets.tileB.add(`${kVal + kk},${col}`);
 
   if (s.id === 'load') {
+    const loader = loaderCoord();
     if (kernel().badges.float4) {
-      const row = Math.min(v.BM - 1, state.thread % Math.max(1, v.BM));
-      for (let x = 0; x < Math.min(4, v.BK); x++) { sets.A.add(`${row},${kVal + x}`); sets.vectorA.add(`${row},${kVal + x}`); }
-      const brow = state.thread % Math.max(1, v.BK);
-      for (let x = 0; x < Math.min(4, v.BN); x++) { sets.B.add(`${kVal + brow},${x}`); sets.vectorB.add(`${kVal + brow},${x}`); }
+      for (let x = 0; x < Math.min(4, v.BK); x++) {
+        addMatrixHit(sets.A, loader.aRow, kVal + loader.aCol + x, M, K);
+        addMatrixHit(sets.vectorA, loader.aRow, kVal + loader.aCol + x, M, K);
+      }
+      for (let x = 0; x < Math.min(4, v.BN); x++) {
+        addMatrixHit(sets.B, kVal + loader.bRow, loader.bCol + x, K, N);
+        addMatrixHit(sets.vectorB, kVal + loader.bRow, loader.bCol + x, K, N);
+      }
+    } else if (!kernel().badges.smem) {
+      addMatrixHit(sets.A, c.ty, kVal, M, K);
+      addMatrixHit(sets.B, kVal, c.tx, K, N);
     } else {
-      own.forEach(([r, col]) => {
-        sets.A.add(`${r},${kVal}`);
-        sets.B.add(`${kVal},${col}`);
-      });
+      addMatrixHit(sets.A, loader.aRow, kVal + loader.aCol, M, K);
+      addMatrixHit(sets.B, kVal + loader.bRow, loader.bCol, K, N);
     }
   }
 
   if (s.id === 'smem' || s.id === 'sync') {
+    const loader = loaderCoord();
     if (kernel().badges.float4) {
-      for (let x = 0; x < Math.min(4, v.BK); x++) sets.As.add(`${x},${state.thread % Math.max(1, v.BM)}`);
-      for (let x = 0; x < Math.min(4, v.BN); x++) sets.Bs.add(`${state.thread % Math.max(1, v.BK)},${x}`);
+      for (let x = 0; x < Math.min(4, v.BK); x++) sets.As.add(`${loader.aCol + x},${loader.aRow}`);
+      for (let x = 0; x < Math.min(4, v.BN); x++) sets.Bs.add(`${loader.bRow},${loader.bCol + x}`);
     } else {
-      own.forEach(([r, col]) => { sets.As.add(`${r},0`); sets.Bs.add(`0,${col}`); });
+      sets.As.add(`${loader.aRow},${loader.aCol}`);
+      sets.Bs.add(`${loader.bRow},${loader.bCol}`);
     }
   }
 
@@ -865,7 +915,7 @@ function activeSets() {
 }
 
 function emptySets() {
-  return { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), vectorA: new Set(), vectorB: new Set() };
+  return { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), scopeA: new Set(), scopeB: new Set(), vectorA: new Set(), vectorB: new Set() };
 }
 
 // ── 渲染函数 ──
@@ -878,6 +928,7 @@ function renderMatrix(el, data, opts = {}) {
     const cls = ['cell'];
     if (value === 0) cls.push('zero');
     if (sets.tile?.has(key)) cls.push('tile');
+    if (sets.scope?.has(key)) cls.push('gmem-scope');
     if (sets.read?.has(key)) cls.push(opts.readClass || 'gmem-read');
     if (sets.write?.has(key)) cls.push(opts.writeClass || 'smem-write');
     if (sets.owner?.has(key)) cls.push('thread-owned');
@@ -979,6 +1030,7 @@ function renderCode() {
 
 function eventCopy() {
   const k = kernel(), v = cfg(), c = threadCoord(), s = curStage();
+  const loader = loaderCoord();
   const whyTexts = {
     launch: '',
     load: k.badges.float4
@@ -1009,10 +1061,10 @@ function eventCopy() {
     return {
       title: '从 Global Memory 取数',
       text: k.badges.float4
-        ? `当前线程用 FLOAT4 搬运 A[${c.tx},${s.kVal}..${s.kVal+3}] → 寄存器，后续会转置写入 As。`
+        ? `当前线程用 FLOAT4 搬运 A[${loader.aRow},${s.kVal + loader.aCol}..${s.kVal + loader.aCol + 3}] 与 B[${s.kVal + loader.bRow},${loader.bCol}..${loader.bCol + 3}]。`
         : (k.badges.smem
-          ? `当前线程读取 k=${s.kVal} 的 A/B 切片到寄存器，准备写入 Shared Memory。`
-          : `当前线程直接读取 k=${s.kVal} 的 A/B 元素到寄存器并参与后续 FMA。`),
+          ? `当前线程按 loader 坐标读取 A[${loader.aRow},${s.kVal + loader.aCol}] 和 B[${s.kVal + loader.bRow},${loader.bCol}]，准备写入 Shared Memory。`
+          : `当前线程读取 A[${c.ty},${s.kVal}] 和 B[${s.kVal},${c.tx}] 到寄存器；浅红范围表示完整 k-loop 会扫过的 A 行与 B 列。`),
       why: whyTexts.load
     };
   }
@@ -1225,10 +1277,10 @@ function renderAll() {
   }
 
   renderMatrix($('matrixA'), state.A, {
-    sets: { tile: sets.tileA, read: sets.A, vector: sets.vectorA }, readClass: 'gmem-read'
+    sets: { tile: sets.tileA, scope: sets.scopeA, read: sets.A, vector: sets.vectorA }, readClass: 'gmem-read'
   });
   renderMatrix($('matrixB'), state.B, {
-    sets: { tile: sets.tileB, read: sets.B, vector: sets.vectorB }, readClass: 'gmem-read'
+    sets: { tile: sets.tileB, scope: sets.scopeB, read: sets.B, vector: sets.vectorB }, readClass: 'gmem-read'
   });
 
   renderMatrix($('matrixC'), state.ref, {
