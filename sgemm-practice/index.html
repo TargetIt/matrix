@@ -104,6 +104,42 @@
     }
     .controls button.primary { background: #153421; border-color: rgba(34,197,94,.58); }
     .controls button.warn { background: #2a2417; border-color: rgba(245,158,11,.5); }
+    .param-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin-top: 10px;
+    }
+    .param-grid label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .param-grid input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--panel-2);
+      color: var(--ink);
+      padding: 6px 7px;
+      font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .param-status {
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 8px;
+      font-size: 11px;
+    }
+    .param-status.invalid {
+      border-color: rgba(239,68,68,.65);
+      background: rgba(239,68,68,.12);
+      color: #fca5a5;
+    }
     .readout {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -352,6 +388,18 @@
           <select id="threadSelect"></select>
         </label>
       </div>
+      <div class="param-grid" aria-label="教学参数">
+        <label>M<input id="paramM" type="number" min="4" max="32" step="4"></label>
+        <label>N<input id="paramN" type="number" min="4" max="32" step="4"></label>
+        <label>K<input id="paramK" type="number" min="4" max="32" step="4"></label>
+        <label>BM<input id="paramBM" type="number" min="1" max="16" step="1"></label>
+        <label>BN<input id="paramBN" type="number" min="1" max="16" step="1"></label>
+        <label>BK<input id="paramBK" type="number" min="1" max="16" step="1"></label>
+        <label>TM<input id="paramTM" type="number" min="1" max="8" step="1"></label>
+        <label>TN<input id="paramTN" type="number" min="1" max="8" step="1"></label>
+        <label>threads<input id="paramThreads" type="number" readonly></label>
+      </div>
+      <div id="paramStatus" class="param-status"></div>
       <div class="readout">
         <div class="metric"><span>GFLOPS</span><b id="perfOut"></b></div>
         <div class="metric"><span>cuBLAS 达成率</span><b id="ratioOut"></b></div>
@@ -429,7 +477,9 @@
 'use strict';
 
 // ── 矩阵尺寸 ──
-const N = 16;
+let M = 16;
+let N = 16;
+let K = 16;
 const cublas = 14448.69;
 
 // ── 7 个 Kernel 定义 ──
@@ -437,7 +487,7 @@ const kernels = [
   {
     id: 1, name: '朴素实现', perf: 2262.168, ratio: 15.66,
     desc: '每个线程负责 C 一个元素，直接从 Global Memory 读取完整 K 维（计算访存比 1:2，严重受限于 GMEM 延迟）。',
-    cfg: { BM: 4, BN: 4, BK: N, TM: 1, TN: 1, threads: 16 },
+    cfg: { BM: 4, BN: 4, BK: K, TM: 1, TN: 1, threads: 16 },
     mechanisms: ['GMEM 逐元素读取'],
     badges: { smem: false, threadTile: false, regFrag: false, float4: false, doubleBuffer: false },
     stages: ['launch','load','compute','write'],
@@ -628,14 +678,14 @@ function buildStages(ki) {
 
   if (k.id === 1) {
     // kernel_1: no SMEM, load & compute over full K
-    out.push({ id: 'load', label: 'GMEM Load', sub: '逐元素读取', kIter: 1 });
-    out.push({ id: 'compute', label: 'FMA 累加', sub: '全 K 维迭代', kIter: 1 });
-    out.push({ id: 'write', label: 'Writeback', sub: '写回 C', kIter: 1 });
+    out.push({ id: 'load', label: 'GMEM Load', sub: '逐元素读取', kIter: 0, kVal: 0 });
+    out.push({ id: 'compute', label: 'FMA 累加', sub: '全 K 维迭代', kIter: 0, kVal: 0 });
+    out.push({ id: 'write', label: 'Writeback', sub: '写回 C', kIter: 0, kVal: 0 });
     return out;
   }
 
   // For SMEM kernels: K-loop iterations
-  const kSteps = N / v.BK;
+  const kSteps = K / v.BK;
   const shownIterations = Math.min(kSteps, 3); // Show up to 3 iterations
 
   for (let iter = 0; iter < shownIterations; iter++) {
@@ -685,14 +735,14 @@ function seeded(seed) {
 
 function makeData() {
   const rand = seeded(state.seed);
-  state.A = Array.from({ length: N }, () => Array.from({ length: N }, () => Math.floor(rand() * 8) - 3));
-  state.B = Array.from({ length: N }, () => Array.from({ length: N }, () => Math.floor(rand() * 8) - 3));
-  state.C = Array.from({ length: N }, () => Array.from({ length: N }, () => 0));
+  state.A = Array.from({ length: M }, () => Array.from({ length: K }, () => Math.floor(rand() * 8) - 3));
+  state.B = Array.from({ length: K }, () => Array.from({ length: N }, () => Math.floor(rand() * 8) - 3));
+  state.C = Array.from({ length: M }, () => Array.from({ length: N }, () => 0));
   state.ref = multiply(state.A, state.B);
 }
 
 function multiply(A, B) {
-  return A.map((row, r) => B[0].map((_, c) => row.reduce((sum, v, k) => sum + v * B[k][c], 0)));
+  return A.map(row => B[0].map((_, c) => row.reduce((sum, v, k) => sum + v * B[k][c], 0)));
 }
 
 function kernel() { return kernels[state.kernelIndex]; }
@@ -701,6 +751,41 @@ function cfg() { return kernel().cfg; }
 function curStage() {
   const s = state.currentStages[state.stepIndex];
   return s || { id: 'launch', kIter: 0, kVal: 0 };
+}
+
+function deriveThreads(v) {
+  return (v.BM / v.TM) * (v.BN / v.TN);
+}
+
+function validateParams(v) {
+  const errors = [];
+  const positive = ['BM', 'BN', 'BK', 'TM', 'TN', 'threads'];
+  for (const key of positive) {
+    if (!Number.isFinite(v[key]) || v[key] <= 0 || Math.floor(v[key]) !== v[key]) errors.push(`${key} 必须是正整数`);
+  }
+  for (const [name, value] of [['M', M], ['N', N], ['K', K]]) {
+    if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) errors.push(`${name} 必须是正整数`);
+  }
+  if (v.BM > M) errors.push('BM 不能超过 M');
+  if (v.BN > N) errors.push('BN 不能超过 N');
+  if (v.BK > K) errors.push('BK 不能超过 K');
+  if (M % v.BM) errors.push('M 必须能被 BM 整除');
+  if (N % v.BN) errors.push('N 必须能被 BN 整除');
+  if (K % v.BK) errors.push('K 必须能被 BK 整除');
+  if (v.BM % v.TM) errors.push('BM 必须能被 TM 整除');
+  if (v.BN % v.TN) errors.push('BN 必须能被 TN 整除');
+  if (kernel().badges.float4 && v.BK % 4) errors.push('FLOAT4 kernel 的 BK 必须是 4 的倍数');
+  if (kernel().badges.float4 && v.TN % 4) errors.push('FLOAT4 写回要求 TN 是 4 的倍数');
+  const derived = errors.length ? 0 : deriveThreads(v);
+  if (!errors.length && (!Number.isFinite(derived) || Math.floor(derived) !== derived || derived <= 0)) errors.push('thread_num 必须是正整数');
+  return { valid: errors.length === 0, errors, derivedThreads: derived };
+}
+
+function syncDerivedThreads() {
+  const v = cfg();
+  const result = validateParams(v);
+  if (result.valid) v.threads = result.derivedThreads;
+  return result;
 }
 
 function threadCoord(t = state.thread) {
@@ -738,8 +823,8 @@ function activeSets() {
   own.forEach(([r, col]) => { sets.owner.add(`${r},${col}`); sets.C.add(`${r},${col}`); });
 
   // Tile boundaries
-  for (let r = 0; r < v.BM; r++) for (let kk = 0; kk < v.BK; kk++) sets.tileA.add(`${r},${v.BK > 1 ? kIter*v.BK + kk : kk}`);
-  for (let kk = 0; kk < v.BK; kk++) for (let col = 0; col < v.BN; col++) sets.tileB.add(`${v.BK > 1 ? kIter*v.BK + kk : kk},${col}`);
+  for (let r = 0; r < v.BM; r++) for (let kk = 0; kk < v.BK; kk++) sets.tileA.add(`${r},${kVal + kk}`);
+  for (let kk = 0; kk < v.BK; kk++) for (let col = 0; col < v.BN; col++) sets.tileB.add(`${kVal + kk},${col}`);
 
   if (s.id === 'load') {
     if (kernel().badges.float4) {
@@ -777,6 +862,10 @@ function activeSets() {
   }
 
   return sets;
+}
+
+function emptySets() {
+  return { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), vectorA: new Set(), vectorB: new Set() };
 }
 
 // ── 渲染函数 ──
@@ -872,7 +961,7 @@ function renderVariables() {
     ['b_tile_stride', Math.max(1, Math.floor(v.threads / Math.max(1, v.BN)))],
     ['write_index', writeIdx],
     ['load_index', loadIdx],
-    ['K 迭代', `${(s.kIter || 0)} / ${Math.floor(N / v.BK)}`]
+    ['K 迭代', `${(s.kIter || 0)} / ${Math.floor(K / v.BK)}`]
   ];
   $('vars').innerHTML = vars.map(([name, value]) => `<div class="var"><span>${name}</span><b>${value}</b></div>`).join('');
 }
@@ -894,7 +983,9 @@ function eventCopy() {
     launch: '',
     load: k.badges.float4
       ? 'FLOAT4 一次搬 4 个 FP32 = 128-bit，减少 4× 内存事务数量，降低内存控制器争用。'
-      : '全局内存延迟 ~400 cycles。将这些数据搬到 SMEM（~30 cycles）是后续所有优化的基础。',
+      : (k.badges.smem
+        ? '全局内存延迟 ~400 cycles。将这些数据搬到 SMEM（~30 cycles）是后续所有优化的基础。'
+        : '朴素实现没有 SMEM 缓存，每次 FMA 都直接从 Global Memory 读取 A/B。'),
     smem: k.badges.float4
       ? 'A tile 转置存入 As（行→列），保证后续读取时同一列元素内存连续、可被 FLOAT4 向量加载。'
       : '所有线程协作写入——真实 kernel 中若 thread_num < tile 元素数，需要多轮搬运（由 a_tile_stride 控制）。',
@@ -919,7 +1010,9 @@ function eventCopy() {
       title: '从 Global Memory 取数',
       text: k.badges.float4
         ? `当前线程用 FLOAT4 搬运 A[${c.tx},${s.kVal}..${s.kVal+3}] → 寄存器，后续会转置写入 As。`
-        : `当前线程读取 k=${s.kVal} 的 A/B 切片到寄存器，准备写入 Shared Memory。`,
+        : (k.badges.smem
+          ? `当前线程读取 k=${s.kVal} 的 A/B 切片到寄存器，准备写入 Shared Memory。`
+          : `当前线程直接读取 k=${s.kVal} 的 A/B 元素到寄存器并参与后续 FMA。`),
       why: whyTexts.load
     };
   }
@@ -945,7 +1038,7 @@ function eventCopy() {
     return {
       title: 'FMA 乘累加',
       text: k.badges.threadTile
-        ? `k=${s.kVal}..${Math.min(s.kVal+v.BK-1, N-1)}: 每个线程用 SMEM 的 A/B 切片更新 ${v.TM}×${v.TN} 个 accumulator。`
+        ? `k=${s.kVal}..${Math.min(s.kVal+v.BK-1, K-1)}: 每个线程用 SMEM 的 A/B 切片更新 ${v.TM}×${v.TN} 个 accumulator。`
         : `tmp += A[ty,k] * B[k,tx]，逐 K 元素从 GMEM 累加。`,
       why: whyTexts.compute
     };
@@ -999,7 +1092,7 @@ function renderRail() {
   $('kernelRail').innerHTML = kernels.map((k, i) => {
     const active = i === state.kernelIndex;
     const mech = k.mechanisms[0];
-    const kSteps = k.id === 1 ? 1 : N / k.cfg.BK;
+    const kSteps = k.id === 1 ? 1 : K / k.cfg.BK;
     return `<button class="kernel-btn ${active ? 'active' : ''}" data-index="${i}">
       <span class="num">${k.id}</span>
       <span><b>${k.name}</b><small>${mech + (k.cfg.BK > 1 ? ` · ${kSteps}轮 K-loop` : '')}</small></span>
@@ -1012,7 +1105,7 @@ function renderRail() {
 }
 
 function renderThreads() {
-  const currentMax = cfg().threads;
+  const currentMax = Math.max(1, cfg().threads || 1);
   // Show all threads, but use optgroups for many threads
   const opts = [];
   for (let i = 0; i < currentMax; i++) {
@@ -1021,6 +1114,40 @@ function renderThreads() {
   $('threadSelect').innerHTML = opts.join('');
   state.thread = Math.min(state.thread, currentMax - 1);
   $('threadSelect').value = String(state.thread);
+}
+
+function renderParams() {
+  const v = cfg();
+  const result = syncDerivedThreads();
+  const values = { M, N, K, BM: v.BM, BN: v.BN, BK: v.BK, TM: v.TM, TN: v.TN, Threads: v.threads };
+  for (const [key, value] of Object.entries(values)) {
+    const el = $(`param${key}`);
+    if (el) el.value = value;
+  }
+  $('paramStatus').classList.toggle('invalid', !result.valid);
+  $('paramStatus').textContent = result.valid
+    ? `合法组合：thread_num = (BM/TM) × (BN/TN) = ${v.threads}，K-loop = ${K / v.BK} 轮。`
+    : result.errors.join('；');
+  $('nextStep').disabled = !result.valid;
+  $('play').disabled = !result.valid;
+  return result;
+}
+
+function applyParamChange(key, rawValue) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) return;
+  if (key === 'M') M = value;
+  else if (key === 'N') N = value;
+  else if (key === 'K') K = value;
+  else cfg()[key] = value;
+  const result = syncDerivedThreads();
+  state.thread = Math.min(state.thread, Math.max(0, cfg().threads - 1));
+  if (result.valid) {
+    state.currentStages = buildStages(state.kernelIndex);
+    state.stepIndex = Math.min(state.stepIndex, state.currentStages.length - 1);
+    makeData();
+  }
+  renderAll();
 }
 
 function renderChart() {
@@ -1049,10 +1176,14 @@ function renderChart() {
 
 // ── 主渲染 ──
 function renderAll() {
-  const k = kernel(), v = cfg(), sets = activeSets(), s = curStage();
+  const k = kernel(), v = cfg();
+  const validation = syncDerivedThreads();
+  const sets = validation.valid ? activeSets() : emptySets();
+  const s = curStage();
 
   // Left panel
   renderRail();
+  renderParams();
   renderThreads();
   $('perfOut').textContent = `${(k.perf / 1000).toFixed(2)} T`;
   $('ratioOut').textContent = `${k.ratio.toFixed(1)}%`;
@@ -1070,10 +1201,11 @@ function renderAll() {
     sets: { owner: sets.owner, reg: sets.reg }
   });
 
-  // Memory matrices — kernel_1 has no SMEM, hide those panels
+  // Memory matrices stay mounted to avoid layout jumps between stages.
   const hasSmem = k.badges.smem;
-  $('wrapAs').style.display = hasSmem ? '' : 'none';
-  $('wrapBs').style.display = hasSmem ? '' : 'none';
+  $('wrapAs').style.display = '';
+  $('wrapBs').style.display = '';
+  $('wrapC').style.display = '';
   if (hasSmem) {
     $('asShape').textContent = k.badges.float4 ? `${v.BK}×${v.BM} (转置存)` : `${v.BM}×${v.BK}`;
     $('bsShape').textContent = `${v.BK}×${v.BN}`;
@@ -1085,6 +1217,11 @@ function renderAll() {
     renderMatrix($('matrixBs'), bs, {
       sets: { write: sets.Bs, read: sets.Bs }, readClass: 'smem-read', writeClass: 'smem-write'
     });
+  } else {
+    $('asShape').textContent = '未使用';
+    $('bsShape').textContent = '未使用';
+    renderMatrix($('matrixAs'), [[0]], { sets: {} });
+    renderMatrix($('matrixBs'), [[0]], { sets: {} });
   }
 
   renderMatrix($('matrixA'), state.A, {
@@ -1094,15 +1231,9 @@ function renderAll() {
     sets: { tile: sets.tileB, read: sets.B, vector: sets.vectorB }, readClass: 'gmem-read'
   });
 
-  // C matrix visibility: only show during writeback
-  if (s.id === 'write') {
-    $('wrapC').style.display = '';
-    renderMatrix($('matrixC'), state.ref, {
-      sets: { read: sets.C, owner: sets.owner }, readClass: 'c-write'
-    });
-  } else {
-    $('wrapC').style.display = 'none';
-  }
+  renderMatrix($('matrixC'), state.ref, {
+    sets: { read: s.id === 'write' ? sets.C : new Set(), owner: sets.owner }, readClass: 'c-write'
+  });
 
   // Register file & event
   renderRegisters();
@@ -1121,6 +1252,8 @@ function renderAll() {
 function selectKernel(index) {
   state.kernelIndex = index;
   state.stepIndex = 0;
+  if (kernel().id === 1) kernel().cfg.BK = K;
+  syncDerivedThreads();
   state.currentStages = buildStages(index);
   renderAll();
 }
@@ -1148,6 +1281,9 @@ renderAll();
 
 // ── 事件绑定 ──
 $('threadSelect').addEventListener('change', event => { state.thread = Number(event.target.value); /* preserve stepIndex */ renderAll(); });
+for (const key of ['M', 'N', 'K', 'BM', 'BN', 'BK', 'TM', 'TN']) {
+  $(`param${key}`).addEventListener('change', event => applyParamChange(key, event.target.value));
+}
 $('nextStep').addEventListener('click', () => step(1));
 $('prevStep').addEventListener('click', () => step(-1));
 $('resetData').addEventListener('click', () => { state.seed += 17; makeData(); renderAll(); });
