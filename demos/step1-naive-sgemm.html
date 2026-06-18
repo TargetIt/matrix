@@ -118,7 +118,7 @@
     <section class="panel top-grid">
       <div>
         <h1>步骤 1：Naive SGEMM 的 k 循环</h1>
-        <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 Naive kernel、线程到 C 元素的映射和逐 K 累加。<a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">查看本地原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
+        <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 Naive kernel、线程到 C 元素的映射和逐 K 累加。<a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">查看原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
         <p>点击矩阵 <strong>C</strong> 中任意一个单元，或拖动下方的 row / col 滑块，选中一个输出元素。再点击“播放 k 循环”，你会看到当前线程如何在每一步都从 GMEM 取 <code>A[row, k]</code> 和 <code>B[k, col]</code>，不断累加得到最终结果。</p>
       </div>
       <div class="tip">

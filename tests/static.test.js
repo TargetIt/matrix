@@ -46,10 +46,15 @@ for (const demo of [
   'demos/step4-vectorized-memory-access.html',
   'demos/step5-warp-tiling-cutlass.html'
 ]) {
-  assert.match(read(demo), /\.\.\/(cuda-matmul-worklog|sgemm-practice|cutlass-hierarchy)\/original\.md/, `source link missing: ${demo}`);
+  assert.match(read(demo), /https:\/\/(siboehm\.com\/articles\/22\/CUDA-MMM|github\.com\/wangzyon\/NVIDIA_SGEMM_PRACTICE|developer\.nvidia\.com\/blog\/cutlass-linear-algebra-cuda\/)/, `source URL missing: ${demo}`);
+  assert.doesNotMatch(read(demo), /href="\.\.\/(cuda-matmul-worklog|sgemm-practice|cutlass-hierarchy)\/original\.md"/, `local original link should not be used: ${demo}`);
 }
 
 assert.match(read('index.html'), /步骤与原文索引/);
+assert.match(read('index.html'), /https:\/\/developer\.nvidia\.com\/blog\/cutlass-linear-algebra-cuda\//);
+assert.match(read('index.html'), /https:\/\/github\.com\/wangzyon\/NVIDIA_SGEMM_PRACTICE/);
+assert.match(read('index.html'), /https:\/\/siboehm\.com\/articles\/22\/CUDA-MMM/);
+assert.doesNotMatch(read('index.html'), /href="\.\/(cuda-matmul-worklog|sgemm-practice|cutlass-hierarchy)\/original\.md"/);
 
 for (const page of [
   'index.html',

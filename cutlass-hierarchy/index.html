@@ -70,7 +70,7 @@
       <h1>CUTLASS：GEMM 层级如何映射到 GPU</h1>
       <p class="lede">从矩阵问题逐层进入 thread block、warp 与 thread。只提供满足 block、warp、thread 整除关系和 32-lane 映射约束的教学 policy。</p>
     </div>
-    <div class="source"><a href="original.md">阅读原文</a> · <a href="SOURCE.md">来源记录</a><br>默认 policy：128×32×8</div>
+    <div class="source"><a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">阅读原文</a> · <a href="SOURCE.md">来源记录</a><br>默认 policy：128×32×8</div>
   </header>
   <p class="guide"><strong>阅读路径：</strong>先观察完整 GEMM，再依次选择 Thread Block、Warp、Thread。只有进入当前层级后，内部结构才会高亮；右侧参数用于进一步实验。</p>
 

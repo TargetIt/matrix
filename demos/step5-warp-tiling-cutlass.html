@@ -26,7 +26,7 @@
   <section class="panel">
     <h1>步骤 5：Threadblock → Warp → 32 Lane Thread Tiles</h1>
     <p>选择 policy 后，点击任意 warp，再进入 Thread Tile 层查看该 warp 内 32 个 lane 的 accumulator 所有权。资源数字是指定架构下的静态上界估算，不代表编译器或运行时实测。</p>
-    <div class="source-ref"><strong>本步骤参考：</strong>《CUTLASS: Fast Linear Algebra in CUDA C++》中的 GEMM hierarchy、warp/thread tile、寄存器 accumulator 和双缓冲流水；性能背景同时参考 Worklog。<a href="../cutlass-hierarchy/original.md" target="_blank" rel="noopener">CUTLASS 原文</a> · <a href="../cutlass-hierarchy/SOURCE.md" target="_blank" rel="noopener">来源记录</a> · <a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">Worklog 原文</a></div>
+    <div class="source-ref"><strong>本步骤参考：</strong>《CUTLASS: Fast Linear Algebra in CUDA C++》中的 GEMM hierarchy、warp/thread tile、寄存器 accumulator 和双缓冲流水；性能背景同时参考 Worklog。<a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">CUTLASS 原文</a> · <a href="../cutlass-hierarchy/SOURCE.md" target="_blank" rel="noopener">来源记录</a> · <a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">Worklog 原文</a></div>
     <div class="controls">
       <label>Block M<select id="bm"><option>64</option><option selected>128</option></select></label>
       <label>Block N<select id="bn"><option>64</option><option selected>128</option></select></label>

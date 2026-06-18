@@ -91,7 +91,7 @@
   <div class="page">
     <section class="panel">
       <h1>前言演示：GMEM → SMEM → Registers</h1>
-      <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 GPU 内存层级、GMEM/SMEM 与寄存器介绍。<a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">查看本地原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
+      <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 GPU 内存层级、GMEM/SMEM 与寄存器介绍。<a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">查看原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
       <p>拖动 <strong>Tile Reuse</strong>，观察同一批数据被复用得越多时，GMEM 平摊到每次 FMA 的字节数如何下降。将鼠标悬停在下方卡片上，还会高亮对应层级的数据流。</p>
       <div class="controls">
         <label>

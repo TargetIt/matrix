@@ -28,7 +28,7 @@
   <section class="panel">
     <h1>步骤 3：Shared Memory Caching & Block Tiling</h1>
     <p>选择输出 block 和 K tile 轮次，再推进五个阶段。演示同时覆盖 M/N 输出边界、K 维尾块补零，以及覆盖 SMEM 前必须执行的第二次同步。</p>
-    <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 Shared Memory Caching，以及《NVIDIA_SGEMM_PRACTICE》的 shared-memory kernel。<a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">Worklog 原文</a> · <a href="../sgemm-practice/original.md" target="_blank" rel="noopener">SGEMM Practice 原文</a></div>
+    <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 Shared Memory Caching，以及《NVIDIA_SGEMM_PRACTICE》的 shared-memory kernel。<a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">Worklog 原文</a> · <a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">SGEMM Practice 原文</a></div>
     <div class="controls">
       <label>矩阵规模 N<select id="size"><option>8</option><option selected>10</option><option>12</option></select></label>
       <label>Block Tile<select id="tile"><option>2</option><option selected>4</option><option>5</option></select></label>

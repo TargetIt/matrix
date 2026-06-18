@@ -35,7 +35,7 @@
   <a class="back" href="../index.html">← MATRIX 可视化入口</a>
   <header>
     <div><div class="eyebrow">Source 03 · CUDA Matmul Worklog</div><h1>从 1.3% 到 93.7%：瓶颈如何迁移</h1><p>把逐步优化记录转成可操作的性能实验室：定位每级吞吐、探索理论 Roofline，并用寄存器、SMEM 和线程资源复算 occupancy。</p></div>
-    <div class="meta"><b>NVIDIA A6000</b><br>FP32 peak 30 TFLOPS · 768 GB/s<br><a href="original.md">阅读原文</a> · <a href="SOURCE.md">来源记录</a></div>
+    <div class="meta"><b>NVIDIA A6000</b><br>FP32 peak 30 TFLOPS · 768 GB/s<br><a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">阅读原文</a> · <a href="SOURCE.md">来源记录</a></div>
   </header>
   <section class="summary">
     <div><span>Naive</span><b>309 GFLOPS</b></div><div><span>Warp Tiling</span><b>21.78 TFLOPS</b></div><div><span>cuBLAS</span><b>23.25 TFLOPS</b></div><div><span>总提升</span><b>70.5×</b></div>

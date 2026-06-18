@@ -106,7 +106,7 @@
   <div class="page">
     <section class="panel">
       <h1>步骤 2：Warp 合并访存与 128B 事务</h1>
-      <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 warp、global memory coalescing 和连续 128B 访问示例。<a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">查看本地原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
+      <div class="source-ref"><strong>本步骤参考：</strong>《How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance》中的 warp、global memory coalescing 和连续 128B 访问示例。<a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">查看原文</a> · <a href="../cuda-matmul-worklog/SOURCE.md" target="_blank" rel="noopener">来源记录</a></div>
       <p>切换访问模式，并拖动 <strong>Stride</strong> 或 <strong>Lane Step</strong>。左侧是 warp 内 32 个线程，右侧是按 128B 切分的全局内存段。请观察：当线程地址连续时，右侧只需要极少段；当地址稀疏时，事务数量和浪费字节会迅速上升。</p>
       <div class="controls">
         <select id="patternSelect">

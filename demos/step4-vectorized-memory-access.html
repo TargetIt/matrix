@@ -26,7 +26,7 @@
   <section class="panel">
     <h1>步骤 4：float4 / 128-bit 向量访存</h1>
     <p>向量指令不会减少必须传输的数据字节，但能让一条 load/store 搬运多个连续元素。调整向量宽度、起始偏移和元素数量，观察对齐前导、主体向量指令与尾部标量处理。</p>
-    <div class="source-ref"><strong>本步骤参考：</strong>《NVIDIA_SGEMM_PRACTICE》中的 FLOAT4 Vectorized Memory Access，并用 Worklog 的合并访存背景解释地址边界。<a href="../sgemm-practice/original.md" target="_blank" rel="noopener">SGEMM Practice 原文</a> · <a href="../cuda-matmul-worklog/original.md" target="_blank" rel="noopener">Worklog 原文</a></div>
+    <div class="source-ref"><strong>本步骤参考：</strong>《NVIDIA_SGEMM_PRACTICE》中的 FLOAT4 Vectorized Memory Access，并用 Worklog 的合并访存背景解释地址边界。<a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">SGEMM Practice 原文</a> · <a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">Worklog 原文</a></div>
     <div class="controls">
       <label>向量宽度<select id="width"><option value="1">float（32-bit）</option><option value="2">float2（64-bit）</option><option value="4" selected>float4（128-bit）</option></select></label>
       <label>起始偏移（float）<input id="offset" type="range" min="0" max="7" value="0"><strong id="offsetOut"></strong></label>
