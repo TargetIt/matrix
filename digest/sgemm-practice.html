@@ -55,6 +55,25 @@ ty = threadIdx.x / BN</pre>
     </section>
 
     <section class="section">
+      <h2>先建立一个总原则：FLOPs 不变，数据复用变了</h2>
+      <p>很多 SGEMM 优化容易让人误解，好像引入某个技术后“计算量变少了”。严格说，矩阵乘法的数学计算量没有变。假设 C 是 M×N，K 是内积长度，那么总 FMA 数永远是：</p>
+      <p class="formula">总 FMA = M × N × K</p>
+      <p>优化真正改变的是：为了完成这些 FMA，要从 GMEM、SMEM、寄存器里读取多少次数据；每读一次 A 或 B，能服务多少次乘加。</p>
+      <div class="guide">所以后面看每一步技术，请用同一个问题检查它：引入之前，每读一次数据能做几次 FMA？引入之后，每读一次数据能做几次 FMA？如果答案变大，说明数据复用变好了。</div>
+      <table class="matrix-table">
+        <thead><tr><th>技术</th><th>引入前</th><th>引入后</th><th>主要好处</th><th>主要代价</th></tr></thead>
+        <tbody>
+          <tr><td>Shared Memory</td><td>线程反复从 GMEM 读 A/B</td><td>block 合作搬 A/B tile 到 SMEM，再复用</td><td>减少慢速 GMEM 重复读取</td><td>需要同步；占用 SMEM</td></tr>
+          <tr><td>1D Thread Tile</td><td>一个线程算 1 个 C</td><td>一个线程沿一个方向算多个 C</td><td>一个 B 或 A 值服务多个 accumulator</td><td>寄存器数量增加</td></tr>
+          <tr><td>2D Thread Tile</td><td>线程只做单点或一条线</td><td>线程算 TM×TN 的 C 小块</td><td>A/B fragment 形成 outer product，复用更强</td><td>寄存器压力更高，调参更敏感</td></tr>
+          <tr><td>Register Cache</td><td>内层循环频繁读 SMEM</td><td>当前 A/B fragment 先放进寄存器</td><td>减少 SMEM 访问，FMA 喂数更快</td><td>寄存器占用上升</td></tr>
+          <tr><td>FLOAT4</td><td>一次 load 一个 float</td><td>一次 load 4 个连续 float</td><td>减少访存指令和内存事务</td><td>要求连续、对齐、后续能消费</td></tr>
+          <tr><td>Double Buffer</td><td>先搬 tile，再计算，搬运和计算串行</td><td>算当前 tile 时预取下一 tile</td><td>隐藏部分 GMEM 延迟</td><td>代码复杂；SMEM 使用翻倍</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
       <h2>Kernel 1：朴素实现，最容易懂，也最容易慢</h2>
       <p>一个线程负责一个 C 元素。例如 thread 1 负责 C[0,1]。它会读取 A 的第 0 行和 B 的第 1 列：</p>
       <pre>tmp = 0
@@ -93,6 +112,51 @@ acc2 += As[row+2, k] * b
 acc3 += As[row+3, k] * b</pre>
       <div class="guide">关键变化是：线程不再只维护一个 accumulator，而是维护多个 accumulator。一个从 B 读来的值，能同时服务多个 C 输出。数据搬一次，算得更多。</div>
       <div class="guide plain">像厨师拿到一勺酱，不只给一碗面加，而是给四碗面都加。酱只拿一次，产出变多。</div>
+    </section>
+
+    <section class="section">
+      <h2>Thread Tile 的前后对比：它到底省了什么</h2>
+      <p>我们用一个非常具体的例子。假设要计算 C 的 4×4 小块，并且 K=4。数学上，不管怎么优化，都要做：</p>
+      <p class="formula">4 × 4 × 4 = 64 次 FMA</p>
+      <p>所以 Thread Tile 并没有把 64 次乘加变成 32 次。它改变的是“为了做这 64 次 FMA，要读取多少 A/B 操作数，以及这些操作数能被复用几次”。</p>
+
+      <h3>没有 Thread Tile：16 个线程各算 1 个 C</h3>
+      <pre>每个线程负责 1 个 C[m,n]
+for k in 0..3:
+    读取 1 个 A[m,k]
+    读取 1 个 B[k,n]
+    做 1 次 FMA</pre>
+      <p>对于 16 个 C 元素，每个元素需要 4 次 FMA。每次 FMA 直觉上要读 1 个 A 和 1 个 B。于是整个 4×4 小块大约是：</p>
+      <table class="matrix-table">
+        <thead><tr><th>项目</th><th>数量</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>FMA</td><td>64</td><td>数学计算量固定。</td></tr>
+          <tr><td>A 操作数读取</td><td>64</td><td>16 个输出 × 4 个 k。</td></tr>
+          <tr><td>B 操作数读取</td><td>64</td><td>16 个输出 × 4 个 k。</td></tr>
+          <tr><td>每读一个 A/B 的产出</td><td>约 1 次 FMA</td><td>读完基本只服务当前输出。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>有 2D Thread Tile：1 个线程算 4×4 个 C</h3>
+      <pre>一个线程维护 acc[4][4]
+for k in 0..3:
+    读取 4 个 A：a_frag[0..3]
+    读取 4 个 B：b_frag[0..3]
+    做 4×4 = 16 次 FMA</pre>
+      <p>现在每个 k 步只需要拿 4 个 A 和 4 个 B，就能组合出 16 次 FMA。K=4 时：</p>
+      <table class="matrix-table">
+        <thead><tr><th>项目</th><th>数量</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>FMA</td><td>64</td><td>数学计算量还是固定。</td></tr>
+          <tr><td>A fragment 读取</td><td>16</td><td>每个 k 读 4 个 A，4 轮 k。</td></tr>
+          <tr><td>B fragment 读取</td><td>16</td><td>每个 k 读 4 个 B，4 轮 k。</td></tr>
+          <tr><td>每读一组 A/B 的产出</td><td>16 次 FMA</td><td>4 个 A 和 4 个 B 做 outer product。</td></tr>
+        </tbody>
+      </table>
+
+      <div class="guide">这就是 Thread Tile 的核心思想：不是减少总 FMA，而是把“读数据”变得更值钱。没有 tile 时，数据读进来很快被一个输出消费掉；有 tile 后，同一批 A/B fragment 会组合出一小片 C。</div>
+      <div class="guide deep">代价也很明确：线程要维护 `acc[4][4]`，也就是 16 个 accumulator，还要放 a_frag、b_frag。这会增加寄存器使用。如果寄存器太多，GPU 同时驻留的线程块可能变少，occupancy 下降。所以 TM/TN 不能无限加大。</div>
+      <div class="guide plain">生活类比：没有 Thread Tile 时，一个人拿一次面粉只做一个馒头；有 Thread Tile 后，一个人拿一盆面粉和几种馅料，一次组合做出一盘不同口味的馒头。面粉没少用，馒头也没少做，但每次拿材料的产出更高。</div>
     </section>
 
     <section class="section">
