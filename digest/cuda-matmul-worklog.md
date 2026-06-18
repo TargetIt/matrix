@@ -1,180 +1,5 @@
 Source 01 · 从第一性原理开始
-      # CUDA MMM Worklog：从最笨的矩阵乘法，慢慢走到接近 cuBLAS
-
-      原文是一篇优化工作日志。它的好处是诚实：先写一个很慢但正确的版本，然后一点点观察瓶颈、修瓶颈。下面把它重新讲成一条中文学习路线，让没写过 CUDA 的读者也能先理解“为什么这样优化”。
-
-      原始网页：How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance
-
-    
-
-    
-      ## 原文线索
-
-      > 📌 **原文主题：** 手写 CUDA SGEMM，并逐步加入 global memory coalescing、shared memory caching、block tiling、vectorized memory access、autotuning 和 warptiling。
-
-      > 📌 **原文关键数据：** A6000 上，朴素版本约 309 GFLOP/s；优化到 warptiling 后约 21.8 TFLOP/s，接近 cuBLAS FP32 性能。
-
-      > 📌 **原文结构：** 先解释 CUDA 线程层级，再用一个线程算一个 C 元素的 naive kernel 建立基线；随后按 kernel 版本逐步修复访存、复用、并行粒度和调参问题。
-
-      > 💡 **小白通俗解析：** 如果你只记一句话：这篇文章不是在教“矩阵乘法公式”，而是在教“同一个公式为什么在 GPU 上能差几十倍”。差距来自数据搬运方式，而不是数学变了。
-
-    
-
-    
-      ## 第一性原理：矩阵乘法到底做了什么
-
-      
-        ### 1. 每个 C 元素都是一行和一列的点积
-
-        我们从一个最小例子开始。假设 A 是 2×3，B 是 3×2：
-
-        
-```
-A = [[1, 2, 3],
-     [4, 5, 6]]
-
-B = [[ 7,  8],
-     [ 9, 10],
-     [11, 12]]
-```
-
-        输出 C 是 2×2。比如 C[0,1] 用 A 的第 0 行和 B 的第 1 列相乘：
-
-        
-```
-C[0,1] = A[0,0]×B[0,1] + A[0,1]×B[1,1] + A[0,2]×B[2,1]
-       = 1×8 + 2×10 + 3×12
-       = 64
-```
-
-        > 💡 **小白通俗解析：** 这就是所有 SGEMM kernel 的核心循环。无论后面出现 shared memory、warp tiling、vectorized load，本质都没有离开这件事：取 A 的一段、取 B 的一段，做 multiply-add，累加到 C。
-
-      
-
-      
-        ### 2. 最朴素的 CUDA 想法：一个线程算一个 C 元素
-
-        朴素 kernel 很容易理解：C 有多少个元素，就让很多线程分工。每个线程拿到一个 `(row, col)`，自己沿 K 方向循环。
-
-        
-```
-row = 当前线程负责的 C 行
-col = 当前线程负责的 C 列
-tmp = 0
-for k in 0..K-1:
-    tmp += A[row, k] * B[k, col]
-C[row, col] = tmp
-```
-
-        > 💡 **小白通俗解析：** 这就像每个学生负责算表格里的一个格子。每个学生都去资料柜里拿自己需要的那一行和那一列，算完填到格子里。办法没错，但是如果资料柜很远，大家反复跑去拿同样的资料，就慢了。
-
-      
-
-      
-        ### 3. 为什么朴素版本慢：不是算乘法慢，是拿数据慢
-
-        GPU 的计算单元很多，做乘加很快。但 Global Memory 距离计算单元远，延迟高。朴素版本里，每个线程都直接从 Global Memory 读取 A 和 B。大量线程会重复读取相同数据。
-
-        > 💡 **小白通俗解析：** 比如 C[0,0] 和 C[0,1] 都需要 A 的第 0 行。朴素版本可能让两个线程各自从 GMEM 读一遍 A[0,*]。如果 C 的第一行有 1000 个元素，那么 A 的第 0 行会被许多线程重复读。优化就是把这种重复读变成“读一次，多人用”。
-
-        > 💡 **小白通俗解析：** 从硬件角度看，性能通常受两个上限限制：计算上限和带宽上限。如果每做一次 FMA 都要从 GMEM 搬很多字节，那么即使计算单元还很空，也会因为带宽供不上而慢。这就是 roofline 模型背后的直觉。
-
-      
-    
-
-    
-      ## 第一轮优化：让同一组线程排队拿连续数据
-
-      原文的第二个重要点是 global memory coalescing。GPU 里 32 个线程通常组成一个 warp。如果这些线程访问连续地址，硬件可以把它们合并成更少的内存事务。
-
-      
-        不连续访问线程 0 读地址 0，线程 1 读地址 4096，线程 2 读地址 8192。硬件只能分散搬，浪费带宽。
-        连续访问线程 0 读地址 0，线程 1 读地址 4，线程 2 读地址 8。硬件可以合并成一大笔交易。
-      
-      > 💡 **小白通俗解析：** 生活类比：32 个人去图书馆借书。如果他们要的书都在同一排，管理员一次推车就能拿来。如果每个人要的书散在不同楼层，管理员要跑很多趟。coalescing 就是让同一批人尽量拿同一排附近的书。
-
-      > 💡 **小白通俗解析：** 注意，coalescing 没有减少数学计算量，也没有改变结果。它只是改变线程和矩阵位置的映射，让相邻线程访问相邻地址。很多 GPU 优化第一步都是先让访问“整齐”。
-
-    
-
-    
-      ## 第二轮优化：Shared Memory，把远处仓库变成近处货架
-
-      coalescing 让搬运更整齐，但数据仍然从 Global Memory 来。下一步是把会被反复用的 A/B tile 先搬进 Shared Memory。
-
-      
-```
-for each K tile:
-    每个线程搬一点 A tile 和 B tile 到 SMEM
-    __syncthreads()
-    每个线程从 SMEM 读数据，做很多次 FMA
-    __syncthreads()
-    进入下一块 K tile
-```
-
-      > 💡 **小白通俗解析：** Shared Memory 的关键是“block 内共享”。一个 block 负责 C 的一块区域，这块区域会反复使用某些 A/B 小块。与其让每个线程都去 GMEM 取，不如让 block 里的线程合伙搬一次，然后大家在 SMEM 里反复读。
-
-      > 💡 **小白通俗解析：** 这像家里做饭。大米在地下室仓库，调料在厨房架子上。每天吃饭时不会每舀一勺米都跑地下室；会先拿一袋到厨房，之后在厨房取。SMEM 就是厨房货架。
-
-      > 💡 **小白通俗解析：** `__syncthreads()` 的作用是防止“有人还没把货架放满，另一个人已经开始拿”。第一次同步保证 SMEM 写完再读，第二次同步保证这一轮大家读完后，才允许下一轮覆盖 SMEM。
-
-    
-
-    
-      ## 第三轮优化：切块和复用，让一个线程多算一点
-
-      只把数据搬到 SMEM 还不够。下一步要让每次搬来的数据产生更多计算。于是出现 block tiling、1D blocktiling、2D blocktiling、thread tiling。
-
-      
-| 层级 | 它在问什么问题 | 收益 |
-|---|---|---|
-| Block Tile | 一个 block 负责 C 的哪一块？ | 让 A/B tile 在 block 内复用。 |
-| Thread Tile | 一个线程负责一个 C，还是一小块 C？ | 让寄存器里的 A/B 值多服务几个输出。 |
-| Warp Tile | 一个 warp 负责 C 的哪一块？ | 让 warp 内访问和计算更规则。 |
-
-      > 💡 **小白通俗解析：** 如果一个线程只算一个 C 元素，它每次读到的 A/B 值只服务一个 accumulator。如果一个线程算 4×4 个 C 元素，读到的一小段 A 和 B 可以组合出 16 个乘加。这样每次数据读取的“产出”变高。
-
-      > 💡 **小白通俗解析：** 以前是一个厨师拿一份菜只做一碗饭；现在一个厨师拿一批食材，同时做四碗、八碗、十六碗。食材搬运次数不变，但产出更多。
-
-    
-
-    
-      ## 第四轮优化：向量化读取和自动调参
-
-      当访问已经比较整齐，数据也开始复用，接下来要继续减少指令和事务开销。向量化读取，比如一次读取 `float4`，可以让一个线程一次搬 4 个连续 FP32。
-
-      > 💡 **小白通俗解析：** 这不是说一个 `float4` 神奇地让算法快四倍，而是减少“发起内存读取”这件事的次数。前提是地址连续、对齐，并且后续计算能消费这些数据。否则一次搬多了也没用。
-
-      > 💡 **小白通俗解析：** Autotuning 的意义是：BM、BN、BK、TM、TN 这些参数之间有复杂权衡。tile 大了复用高，但寄存器和 SMEM 压力也大；tile 小了资源轻，但复用不足。很多高性能 kernel 最后都需要在硬件上实际搜索一批候选参数。
-
-    
-
-    
-      ## 最终你应该从这篇带走什么
-
-      
-
-        - 第一性原理：矩阵乘法就是大量点积；每个点积都沿 K 方向读 A 和 B。
-
-        - 最初瓶颈：朴素实现正确但重复访问 GMEM，数据搬运跟不上计算。
-
-        - 第一步优化：coalescing 让同一 warp 的访问连续，减少内存事务浪费。
-
-        - 第二步优化：SMEM 把可复用的 A/B tile 放到更近的位置。
-
-        - 第三步优化：tiling 让每次搬来的数据服务更多 C 元素。
-
-        - 最后阶段：向量化、warp tiling、autotuning 把访问、计算和资源使用继续磨细。
-
-      
-
-      > 💡 **小白通俗解析：** 
-        读完请自测：如果两个线程都需要 A 的同一行，朴素版本会发生什么？SMEM 版本又怎么避免重复从 GMEM 读？如果你能用“仓库、货架、厨师手里的碗”说清楚，就已经抓住主线。
-
----
-
-# How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog
-
+# CUDA MMM Worklog：从最笨的矩阵乘法，慢慢走到接近 cuBLAS
 
 > 🚀 **【第一性原理导读：矩阵乘法到底在算什么，又为什么会慢？】**
 > 
@@ -198,11 +23,141 @@ for each K tile:
 > 带着这个由浅入深的第一性原理逻辑，我们往下看具体的代码是如何一步步打怪升级的。
 
 
+原文是一篇优化工作日志。它的好处是诚实：先写一个很慢但正确的版本，然后一点点观察瓶颈、修瓶颈。下面把它重新讲成一条中文学习路线，让没写过 CUDA 的读者也能先理解“为什么这样优化”。
 
-> 💡 **小白秒懂（导读）：**
-> 欢迎来到这篇保姆级导读！矩阵乘法（Matmul）是整个人工智能（比如 ChatGPT）能跑起来的“心脏”，占据了 99% 的计算量。这篇文章讲的是作者如何像打怪升级一样，一步一步把一个跑得很慢的初始程序，优化到接近 NVIDIA 官方极限速度（cuBLAS）的过程。
-> 
-> 想象一下：**矩阵乘法**就像是一个拥有几万名厨师的超级大厨房，要炒几百万道菜（计算）。**内存（Memory）**是远处的超级大仓库，**计算核心（Cores）**是厨师。由于仓库太远，厨师走路去拿菜的时间，远远超过了炒菜的时间！接下来的每一步优化，其实都是在教厨师们怎么“少跑腿、多炒菜”。
+原始网页：How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance
+
+## 原文线索
+
+> 📌 **原文主题：** 手写 CUDA SGEMM，并逐步加入 global memory coalescing、shared memory caching、block tiling、vectorized memory access、autotuning 和 warptiling。
+
+> 📌 **原文关键数据：** A6000 上，朴素版本约 309 GFLOP/s；优化到 warptiling 后约 21.8 TFLOP/s，接近 cuBLAS FP32 性能。
+
+> 📌 **原文结构：** 先解释 CUDA 线程层级，再用一个线程算一个 C 元素的 naive kernel 建立基线；随后按 kernel 版本逐步修复访存、复用、并行粒度和调参问题。
+
+> 💡 **小白通俗解析：** 如果你只记一句话：这篇文章不是在教“矩阵乘法公式”，而是在教“同一个公式为什么在 GPU 上能差几十倍”。差距来自数据搬运方式，而不是数学变了。
+
+## 第一性原理：矩阵乘法到底做了什么
+
+### 1. 每个 C 元素都是一行和一列的点积
+
+我们从一个最小例子开始。假设 A 是 2×3，B 是 3×2：
+
+```cpp
+A = [[1, 2, 3],
+     [4, 5, 6]]
+
+B = [[ 7,  8],
+     [ 9, 10],
+     [11, 12]]
+```
+
+输出 C 是 2×2。比如 C[0,1] 用 A 的第 0 行和 B 的第 1 列相乘：
+
+```cpp
+C[0,1] = A[0,0]×B[0,1] + A[0,1]×B[1,1] + A[0,2]×B[2,1]
+       = 1×8 + 2×10 + 3×12
+       = 64
+```
+
+> 💡 **小白通俗解析：** 这就是所有 SGEMM kernel 的核心循环。无论后面出现 shared memory、warp tiling、vectorized load，本质都没有离开这件事：取 A 的一段、取 B 的一段，做 multiply-add，累加到 C。
+
+### 2. 最朴素的 CUDA 想法：一个线程算一个 C 元素
+
+朴素 kernel 很容易理解：C 有多少个元素，就让很多线程分工。每个线程拿到一个 `(row, col)`，自己沿 K 方向循环。
+
+```cpp
+row = 当前线程负责的 C 行
+col = 当前线程负责的 C 列
+tmp = 0
+for k in 0..K-1:
+    tmp += A[row, k] * B[k, col]
+C[row, col] = tmp
+```
+
+> 💡 **小白通俗解析：** 这就像每个学生负责算表格里的一个格子。每个学生都去资料柜里拿自己需要的那一行和那一列，算完填到格子里。办法没错，但是如果资料柜很远，大家反复跑去拿同样的资料，就慢了。
+
+### 3. 为什么朴素版本慢：不是算乘法慢，是拿数据慢
+
+GPU 的计算单元很多，做乘加很快。但 Global Memory 距离计算单元远，延迟高。朴素版本里，每个线程都直接从 Global Memory 读取 A 和 B。大量线程会重复读取相同数据。
+
+> 💡 **小白通俗解析：** 比如 C[0,0] 和 C[0,1] 都需要 A 的第 0 行。朴素版本可能让两个线程各自从 GMEM 读一遍 A[0,*]。如果 C 的第一行有 1000 个元素，那么 A 的第 0 行会被许多线程重复读。优化就是把这种重复读变成“读一次，多人用”。
+
+> 💡 **小白通俗解析：** 从硬件角度看，性能通常受两个上限限制：计算上限和带宽上限。如果每做一次 FMA 都要从 GMEM 搬很多字节，那么即使计算单元还很空，也会因为带宽供不上而慢。这就是 roofline 模型背后的直觉。
+
+## 第一轮优化：让同一组线程排队拿连续数据
+
+原文的第二个重要点是 global memory coalescing。GPU 里 32 个线程通常组成一个 warp。如果这些线程访问连续地址，硬件可以把它们合并成更少的内存事务。
+
+- **不连续访问**：线程 0 读地址 0，线程 1 读地址 4096，线程 2 读地址 8192。硬件只能分散搬，浪费带宽。
+
+- **连续访问**：线程 0 读地址 0，线程 1 读地址 4，线程 2 读地址 8。硬件可以合并成一大笔交易。
+
+> 💡 **小白通俗解析：** 生活类比：32 个人去图书馆借书。如果他们要的书都在同一排，管理员一次推车就能拿来。如果每个人要的书散在不同楼层，管理员要跑很多趟。coalescing 就是让同一批人尽量拿同一排附近的书。
+
+> 💡 **小白通俗解析：** 注意，coalescing 没有减少数学计算量，也没有改变结果。它只是改变线程和矩阵位置的映射，让相邻线程访问相邻地址。很多 GPU 优化第一步都是先让访问“整齐”。
+
+## 第二轮优化：Shared Memory，把远处仓库变成近处货架
+
+coalescing 让搬运更整齐，但数据仍然从 Global Memory 来。下一步是把会被反复用的 A/B tile 先搬进 Shared Memory。
+
+```cpp
+for each K tile:
+    每个线程搬一点 A tile 和 B tile 到 SMEM
+    __syncthreads()
+    每个线程从 SMEM 读数据，做很多次 FMA
+    __syncthreads()
+    进入下一块 K tile
+```
+
+> 💡 **小白通俗解析：** Shared Memory 的关键是“block 内共享”。一个 block 负责 C 的一块区域，这块区域会反复使用某些 A/B 小块。与其让每个线程都去 GMEM 取，不如让 block 里的线程合伙搬一次，然后大家在 SMEM 里反复读。
+
+> 💡 **小白通俗解析：** 这像家里做饭。大米在地下室仓库，调料在厨房架子上。每天吃饭时不会每舀一勺米都跑地下室；会先拿一袋到厨房，之后在厨房取。SMEM 就是厨房货架。
+
+> 💡 **小白通俗解析：** `__syncthreads()` 的作用是防止“有人还没把货架放满，另一个人已经开始拿”。第一次同步保证 SMEM 写完再读，第二次同步保证这一轮大家读完后，才允许下一轮覆盖 SMEM。
+
+## 第三轮优化：切块和复用，让一个线程多算一点
+
+只把数据搬到 SMEM 还不够。下一步要让每次搬来的数据产生更多计算。于是出现 block tiling、1D blocktiling、2D blocktiling、thread tiling。
+
+| 层级 | 它在问什么问题 | 收益 |
+|---|---|---|
+| Block Tile | 一个 block 负责 C 的哪一块？ | 让 A/B tile 在 block 内复用。 |
+| Thread Tile | 一个线程负责一个 C，还是一小块 C？ | 让寄存器里的 A/B 值多服务几个输出。 |
+| Warp Tile | 一个 warp 负责 C 的哪一块？ | 让 warp 内访问和计算更规则。 |
+
+> 💡 **小白通俗解析：** 如果一个线程只算一个 C 元素，它每次读到的 A/B 值只服务一个 accumulator。如果一个线程算 4×4 个 C 元素，读到的一小段 A 和 B 可以组合出 16 个乘加。这样每次数据读取的“产出”变高。
+
+> 💡 **小白通俗解析：** 以前是一个厨师拿一份菜只做一碗饭；现在一个厨师拿一批食材，同时做四碗、八碗、十六碗。食材搬运次数不变，但产出更多。
+
+## 第四轮优化：向量化读取和自动调参
+
+当访问已经比较整齐，数据也开始复用，接下来要继续减少指令和事务开销。向量化读取，比如一次读取 `float4`，可以让一个线程一次搬 4 个连续 FP32。
+
+> 💡 **小白通俗解析：** 这不是说一个 `float4` 神奇地让算法快四倍，而是减少“发起内存读取”这件事的次数。前提是地址连续、对齐，并且后续计算能消费这些数据。否则一次搬多了也没用。
+
+> 💡 **小白通俗解析：** Autotuning 的意义是：BM、BN、BK、TM、TN 这些参数之间有复杂权衡。tile 大了复用高，但寄存器和 SMEM 压力也大；tile 小了资源轻，但复用不足。很多高性能 kernel 最后都需要在硬件上实际搜索一批候选参数。
+
+## 最终你应该从这篇带走什么
+
+- 第一性原理：矩阵乘法就是大量点积；每个点积都沿 K 方向读 A 和 B。
+
+- 最初瓶颈：朴素实现正确但重复访问 GMEM，数据搬运跟不上计算。
+
+- 第一步优化：coalescing 让同一 warp 的访问连续，减少内存事务浪费。
+
+- 第二步优化：SMEM 把可复用的 A/B tile 放到更近的位置。
+
+- 第三步优化：tiling 让每次搬来的数据服务更多 C 元素。
+
+- 最后阶段：向量化、warp tiling、autotuning 把访问、计算和资源使用继续磨细。
+
+> 💡 **小白通俗解析：** 
+读完请自测：如果两个线程都需要 A 的同一行，朴素版本会发生什么？SMEM 版本又怎么避免重复从 GMEM 读？如果你能用“仓库、货架、厨师手里的碗”说清楚，就已经抓住主线。
+
+---
+
+# How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog
 
 > 本文由 NotebookLM `MATRIX 演进跟踪` 来源导出。完整未处理导出见 [`notebooklm-export.md`](notebooklm-export.md)。
 
@@ -247,10 +202,6 @@ https://boards.greenhouse.io/anthropic/jobs/4020350008
 –
 
 Kernel 1: Naive Implementation
-
-> 💡 **小白秒懂（Kernel 1：最笨的初始办法 - 跑断腿模式）：**
-> 这里的 Naive（朴素）方法，就像给每个厨师分配了一道菜的任务。为了炒这道菜，厨师必须走到几公里外的大仓库（全局内存）去拿一根葱，跑回灶台切好；再去拿一块姜，跑回来切好。
-> 结果呢？几万名厨师全挤在去仓库的路上，灶台反而空着。这就是为什么第一版代码连显卡 1.3% 的功力都没发挥出来：时间全浪费在“跑腿”上了！
 
 In the CUDA programming model, computation is ordered in a three-level hierarchy. Each invocation of a CUDA kernel creates a new grid, which consists of multiple blocks. Each block consists of up to 1024 individual threads. These constants can be looked-up in the 
 
@@ -332,10 +283,6 @@ https://siboehm.com/articles/22/Fast-MMM-on-CPU
 
 Kernel 2: Global Memory Coalescing
 
-> 💡 **小白秒懂（Kernel 2：合并访存 - “大家拼车去仓库”）：**
-> 既然每个厨师去拿菜太慢了，能不能“拼车”？在 GPU 里，32 个厨师被称为一个“小队”（Warp）。我们让这 32 个相邻的厨师同时去仓库拿相邻的菜。
-> GPU 硬件非常聪明，看到你们 32 个人要拿挨在一起的 32 颗白菜，直接派一辆大卡车（合并访存），一次性全拉回来。这一招直接让速度飙升了 6 倍！
-
 Before we get into global memory coalescing, we need to learn about the concept of a warp. For execution, the threads of a block are grouped into so-called warps, consisting of 32 threads. A warp is then assigned to a warp scheduler, which is the physical core that executes the instructions. Before the Volta architecture, it used to be the case that all threads of a warp were fed from the same instruction stream. On a branch, the threads that didn’t take the branch were inactived using the so-called active mask. However, since Volta, it’s no longer a good idea to rely on this ‘warp-synchronous’ behaviour, as instructions from different branches may be interleaved even for the same threads within a warp.  There are four warp schedulers per multiprocessor. The grouping into warps happens based on a consecutive  threadId . If we set the  blockDim  to be multi-dimension, then the threadId is calculated like so:
 
 threadId = threadIdx.x+blockDim.x*(threadIdx.y+blockDim.y*threadIdx.z) 
@@ -377,10 +324,6 @@ https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYg
 Global memory coalescing increases memory throughput from 15GB/s to 110GB/s. Performance reaches 2000 GFLOPS, a big improvement compared to the 300 GFLOPS of the first, naive kernel. For the next kernel, we’ll use the GPU’s fast on-chip memory, called shared memory, to cache data that will be re-used.
 
 Kernel 3: Shared Memory Cache-Blocking
-
-> 💡 **小白秒懂（Kernel 3：共享内存 - “在厨房里建个小冰柜”）：**
-> 拼车去大仓库虽然快了，但大仓库终究太远。这次我们在厨房里买个“小冰柜”（Shared Memory，共享内存）。
-> 每次做菜前，整个小队的厨师先一起开卡车去大仓库，拉满满一冰柜的菜回来。然后大家专心从小冰柜里拿菜切菜。小冰柜就在手边，拿起来特别快（Cache-Blocking）！
 
 Next to the large global memory, a GPU has a much smaller region of memory that is physically located on the chip, called shared memory (SMEM). Physically, there’s one shared memory per SM. Here’s a helpful illustration of the memory hierarchy on an A100 GPU (
 
@@ -484,10 +427,6 @@ We’re not using special math instructions, nor dynamic branches, so it’s cle
 
 Kernel 4: 1D Blocktiling for Calculating Multiple Results per Thread
 
-> 💡 **小白秒懂（Kernel 4：让每个厨师多炒几道菜）：**
-> 之前每个厨师只负责一道菜，从小冰柜拿一次葱只切给一道菜，有点亏。
-> 现在，我们让每个厨师同时看管 8 口大锅！拿出一把葱，顺手往 8 口锅里都撒一点。拿一次材料，做了 8 份活。这就叫“1D 分块”，速度翻倍！
-
 So this next kernel works like our last kernel, but adds a new inner loop, for calculating multiple C entries per thread. We now use a SMEM cache size of  BM*BK + BN*BK = 64*8 + 64*8 = 1024  floats, for a total of 4KB per block. Below a visualization. I have highlighted two of the threads and the values they access in the inner loop in orange and red.
 
 All of the important changes for this kernel happen in the inner loop. The loading for GMEM to SMEM stays largely the same as before. Let’s have a look:
@@ -548,10 +487,6 @@ In conclusion, all our kernels perform the same number of FLOPs, but we can redu
 
 Kernel 5: Increasing Arithmetic Intensity via 2D Blocktiling
 
-> 💡 **小白秒懂（Kernel 5：2D 分块 - “厨师变成千手观音”）：**
-> 刚才是一人看 8 口锅，现在让他看 8x8 = 64 口锅！厨师左手拿 A 材料，右手拿 B 材料，组合起来给 64 口锅调味。每次拿的材料被重复利用了 64 次。
-> 此时，厨师的大脑（Registers，寄存器）发挥了巨大作用。他把拿到的菜死死记在脑子里，疯狂炒菜。速度飙升到了官方的 68%！
-
 The basic idea for kernel 5 will be to compute a grid of 8*8 elements of C per thread. The first stage of the kernel is for all threads to work together to populate the SMEM cache. We’ll have each thread load multiple elements. This code looks like so: Here’s a graphical representation of the GMEM loading:
 
 for   ( uint   loadOffset   =   0 ;   loadOffset   <   BM ;   loadOffset   +=   strideA )   {   As [( innerRowA   +   loadOffset )   *   BK   +   innerColA ]   =   A [( innerRowA   +   loadOffset )   *   K   +   innerColA ];   }   for   ( uint   loadOffset   =   0 ;   loadOffset   <   BK ;   loadOffset   +=   strideB )   {   Bs [( innerRowB   +   loadOffset )   *   BN   +   innerColB ]   =   B [( innerRowB   +   loadOffset )   *   N   +   innerColB ];   }   __syncthreads ();  
@@ -579,10 +514,6 @@ Memory accesses per result: K/64 GMEM, K/4 SMEM
 Slowly performance is reaching acceptable levels, however, warp stalls due to memory pipeline congestion are still too frequent. For kernel 6 we’ll take two measures to try to improve that: Transposing  As  to enable auto-vectorization of SMEM loads, and promising the compiler alignment on the GMEM accesses.
 
 Kernel 6: Vectorize SMEM and GMEM Accesses
-
-> 💡 **小白秒懂（Kernel 6：向量化访存 - “用大编织袋搬运”）：**
-> 之前厨师们是用手去拿菜，一次拿一颗（32位浮点数）。其实他们可以提着大编织袋（float4）去拿！
-> 每次去拿必须一次装 4 件东西回来（128位宽）。无论是从仓库搬到冰柜，还是从冰柜搬到灶台，都是用最大力气一次扛一麻袋。这进一步榨干了搬运通道的带宽。
 
 The first optimization that I already hinted at earlier is to transpose  As . This will allow us to load from  As  using vectorized SMEM loads ( LDS.128  in SASS). Below the same visualization of the three inner loops as for kernel 5, but now with  As  transposed in memory:
 
@@ -665,10 +596,6 @@ https://blog.nelhage.com/post/computers-can-be-understood/
 .
 
 Kernel 10: Warptiling
-
-> 💡 **小白秒懂（Kernel 10：Warp 级排兵布阵 - “精细化流水线作业”）：**
-> 到了这一步，就像富士康超级工厂。我们不仅给厨师分锅，还要给厨师小队（Warp）划分专属的地盘，保证不同小队之间绝对不会互相撞倒。
-> 每个小队的数据流动完美契合硬件的脾气（避免Bank Conflict）。加上机器自动挑选最优尺寸（Autotuning），速度达到了官方的神级水平！
 
 Currently, our loop structure looks like this:
 
@@ -797,15 +724,6 @@ https://github.com/openai/triton
 , by looking at the generated PTX.
 
 Conclusion
-
-> 💡 **小白秒懂（全文总结）：**
-> 总结打怪升级路线：
-> 1. 大仓库太远 -> 拼车一起拿（内存合并）。
-> 2. 拼车还是慢 -> 厨房放小冰柜（共享内存）。
-> 3. 小冰柜拿东西累 -> 拿一次材料，多炒几道菜（算术强度，1D/2D分块）。
-> 4. 手拿太慢 -> 用大袋子搬（向量化）。
-> 5. 厨师挤在一起 -> 划分布局流水线（Warp 分块）。
-> 优化 GPU 代码，本质就是一场极其精密的物流统筹战！
 
 Writing this post was a similar experience to my previous post on 
 
