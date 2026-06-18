@@ -11,7 +11,11 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sgemm = read('sgemm-practice/index.html');
 assert.doesNotMatch(sgemm, /reuse:\s*\[/);
 assert.match(sgemm, /不是实测复用率/);
-assert.match(sgemm, /mechanisms:\[/);
+assert.match(sgemm, /SGEMM Kernel 执行轨迹/);
+assert.match(sgemm, /mechanisms:\s*\[/);
+assert.match(sgemm, /threadIdx\.x/);
+assert.match(sgemm, /FETCH_FLOAT4/);
+assert.match(sgemm, /双缓存预取/);
 
 const cutlass = read('cutlass-hierarchy/index.html');
 assert.match(cutlass, /assets\/gemm-policy\.js/);

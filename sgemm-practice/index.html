@@ -5,128 +5,819 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="../assets/semantic-colors.css">
-  <title>NVIDIA SGEMM Practice 优化阶梯</title>
+  <title>NVIDIA SGEMM Practice 执行轨迹</title>
   <style>
-    :root{--bg:#0b1116;--panel:#131c23;--panel2:#18242d;--ink:#eef5f7;--muted:#93a5ae;--line:#2c3b44;--green:var(--semantic-register);--cyan:var(--semantic-smem);--amber:var(--semantic-math);--red:var(--semantic-gmem)}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
-    button,select{font:inherit}.shell{width:min(1320px,calc(100% - 30px));margin:auto;padding:22px 0 60px}
-    a{color:var(--green)}.back{text-decoration:none;font-weight:750}
-    header{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;border-bottom:1px solid var(--line);padding:12px 0 20px}
-    h1{font-size:clamp(28px,4.4vw,54px);line-height:1.02;letter-spacing:0;margin:8px 0}.tag{color:var(--green);font-weight:800;text-transform:uppercase;letter-spacing:.08em}
-    header p{color:var(--muted);max-width:780px;margin:0}.facts{text-align:right;color:var(--muted)}.facts b{color:var(--ink)}
-    .layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);padding:16px}
-    .rail{display:grid;gap:7px}.step{display:grid;grid-template-columns:33px 1fr auto;gap:9px;align-items:center;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--ink);padding:10px;cursor:pointer}
-    .step:hover{background:var(--panel2)}.step.active{border-color:var(--green);background:#162b21}.num{display:grid;place-items:center;width:29px;height:29px;border:1px solid var(--line);color:var(--muted)}
-    .step b{font-size:13px}.step small{display:block;color:var(--muted)}.step output{font-size:12px;color:var(--green)}
-    .rail-actions{display:flex;gap:8px;margin-bottom:9px}.rail-actions button,.compare select{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 10px;cursor:pointer}
-    .content{display:grid;gap:16px}.hero-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:16px}
-    .panel h2{margin:0;font-size:20px}.sub{color:var(--muted);font-size:13px;margin:3px 0 14px}
-    #chart{width:100%;height:330px;display:block}.bar{cursor:pointer}.bar rect{transform-box:fill-box;transform-origin:center bottom;animation:bar-rise .42s cubic-bezier(.2,.8,.2,1) both}.axis{stroke:#43535d}.label{fill:var(--muted);font-size:11px}.value{fill:var(--ink);font-weight:800;font-size:12px}
-    @keyframes bar-rise{from{transform:scaleY(0);opacity:.35}to{transform:scaleY(1);opacity:1}}
-    .score{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:var(--panel2);border-top:3px solid var(--green);padding:12px}.metric span{color:var(--muted);font-size:12px;display:block}.metric b{font-size:25px}
-    .delta{margin-top:10px;border-left:4px solid var(--amber);padding:12px;background:#2a2417}.delta b{display:block;color:var(--amber)}
-    .memory{margin-top:12px;display:grid;gap:7px}.lane{display:grid;grid-template-columns:82px 1fr 48px;gap:8px;align-items:center}.track{height:12px;background:#25323a;overflow:hidden}.fill{height:100%;transition:width .35s}.lane small{color:var(--muted)}
-    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.box{border:1px solid var(--line);background:var(--panel2);padding:12px;min-height:92px;position:relative}.box.active{border-color:var(--cyan)}.box.active::after{content:"";height:3px;position:absolute;left:0;bottom:0;background:var(--cyan);animation:load 1.4s linear infinite}@keyframes load{from{width:0}to{width:100%}}
-    .box b{display:block}.box small{color:var(--muted)}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--cyan);font-size:12px}
-    .compare{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}.compare-card{background:var(--panel2);padding:14px}.compare-card h3{margin:0 0 8px}.compare-card strong{font-size:28px;color:var(--green)}.vs{color:var(--muted);font-weight:800}
-    .insight{color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.legend{display:flex;gap:14px;color:var(--muted);font-size:12px}.dot{display:inline-block;width:9px;height:9px;margin-right:5px}
-    details.disclosure{padding:0}details.disclosure>summary{list-style:none;cursor:pointer;padding:16px;display:flex;justify-content:space-between;gap:12px;align-items:center}details.disclosure>summary::-webkit-details-marker{display:none}details.disclosure>summary::after{content:"展开";color:var(--green);font-weight:800}details[open].disclosure>summary::after{content:"收起"}details.disclosure>.inside{padding:0 16px 16px;border-top:1px solid var(--line)}
-    .bar:focus{outline:none}.bar:focus rect{stroke:var(--amber);stroke-width:4px}
-    @media(prefers-reduced-motion:reduce){.bar rect,.box.active::after{animation:none}.fill{transition:none}}
-    @media(max-width:980px){.layout{grid-template-columns:1fr}.rail{grid-template-columns:repeat(2,1fr)}.hero-grid{grid-template-columns:1fr}}
-    @media(max-width:620px){header{grid-template-columns:1fr}.facts{text-align:left}.rail{grid-template-columns:1fr}.score,.flow,.compare{grid-template-columns:1fr}.vs{text-align:center}}
+    :root {
+      --bg: #081018;
+      --panel: #111b24;
+      --panel-2: #172633;
+      --panel-3: #203241;
+      --ink: #eef7fb;
+      --muted: #9aafba;
+      --line: #2d4050;
+      --gmem: var(--semantic-gmem);
+      --smem: var(--semantic-smem);
+      --reg: var(--semantic-register);
+      --warp: var(--semantic-warp);
+      --math: var(--semantic-math);
+      --cell: 32px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.45 Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, select { font: inherit; }
+    a { color: var(--reg); }
+    .shell { width: min(1440px, calc(100% - 28px)); margin: auto; padding: 20px 0 54px; }
+    .back { text-decoration: none; font-weight: 760; }
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 22px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 0 18px;
+      margin-bottom: 16px;
+    }
+    h1 { margin: 8px 0 6px; font-size: clamp(30px, 4vw, 58px); line-height: 1.02; letter-spacing: 0; }
+    h2, h3 { margin: 0; }
+    header p { color: var(--muted); max-width: 880px; margin: 0; }
+    .tag { color: var(--reg); font-weight: 820; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+    .facts { color: var(--muted); text-align: right; }
+    .facts b { color: var(--ink); }
+    .workbench {
+      display: grid;
+      grid-template-columns: 294px minmax(0, 1fr) 360px;
+      gap: 14px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }
+    .sub { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+    .rail { display: grid; gap: 8px; }
+    .kernel-btn {
+      display: grid;
+      grid-template-columns: 34px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      width: 100%;
+      color: var(--ink);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 9px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .kernel-btn:hover { background: var(--panel-2); }
+    .kernel-btn.active { border-color: var(--reg); background: #112a20; }
+    .num {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .kernel-btn b { font-size: 13px; display: block; }
+    .kernel-btn small { color: var(--muted); display: block; }
+    .kernel-btn output { color: var(--reg); font-size: 12px; }
+    .controls { display: grid; gap: 9px; margin-top: 12px; }
+    .control-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .controls button, .controls select {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--ink);
+      padding: 9px 10px;
+      cursor: pointer;
+      min-height: 40px;
+    }
+    .controls button.primary { background: #153421; border-color: rgba(34,197,94,.58); }
+    .readout {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .metric { background: var(--panel-2); border-top: 3px solid var(--reg); padding: 10px; border-radius: 4px; }
+    .metric span { color: var(--muted); font-size: 11px; display: block; }
+    .metric b { font-size: 19px; }
+    .main-grid { display: grid; gap: 14px; }
+    .trace-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: end; }
+    .badge {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+    .badge.on { color: var(--ink); border-color: rgba(34,197,94,.55); background: rgba(34,197,94,.12); }
+    .stage-line {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 7px;
+      margin-top: 12px;
+    }
+    .stage {
+      min-height: 54px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 6px;
+      padding: 8px;
+      color: var(--muted);
+      position: relative;
+    }
+    .stage.current { color: var(--ink); border-color: var(--math); box-shadow: inset 0 -3px 0 var(--math); }
+    .stage b { display: block; font-size: 12px; }
+    .stage small { font-size: 11px; }
+    .memory-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+    .matrix-wrap {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d1720;
+      padding: 10px;
+    }
+    .matrix-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .matrix-title b { font-size: 13px; }
+    .matrix-title small { color: var(--muted); font-size: 11px; }
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(var(--cols), var(--cell));
+      grid-auto-rows: var(--cell);
+      gap: 3px;
+      overflow: auto;
+      max-width: 100%;
+      padding-bottom: 2px;
+    }
+    .cell {
+      display: grid;
+      place-items: center;
+      min-width: var(--cell);
+      height: var(--cell);
+      border: 1px solid #253746;
+      border-radius: 4px;
+      background: #12202b;
+      color: #dcecf2;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      transition: background .16s, border-color .16s, transform .16s;
+    }
+    .cell.zero { color: #566a74; }
+    .cell.gmem-read { background: rgba(239,68,68,.24); border-color: var(--gmem); }
+    .cell.smem-read, .cell.smem-write { background: rgba(59,130,246,.25); border-color: var(--smem); }
+    .cell.reg-hit { background: rgba(34,197,94,.24); border-color: var(--reg); }
+    .cell.c-write { background: rgba(245,158,11,.24); border-color: var(--math); }
+    .cell.tile { box-shadow: inset 0 0 0 2px rgba(139,92,246,.7); }
+    .cell.thread-owned { outline: 2px solid var(--reg); outline-offset: 1px; }
+    .cell.vector { transform: translateY(-2px); }
+    .sim {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .register-bank {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(54px, 1fr));
+      gap: 8px;
+    }
+    .reg-box {
+      min-height: 50px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      padding: 8px;
+    }
+    .reg-box.hot { border-color: var(--reg); background: rgba(34,197,94,.14); }
+    .reg-box span { color: var(--muted); font-size: 11px; display: block; }
+    .reg-box b { font-size: 15px; }
+    .event {
+      min-height: 88px;
+      border-left: 4px solid var(--math);
+      background: #241f13;
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .event b { color: var(--math); display: block; margin-bottom: 4px; }
+    .code-panel {
+      display: grid;
+      gap: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 440px;
+    }
+    .code-line {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 9px;
+      border-left: 3px solid transparent;
+      padding: 5px 7px 5px 4px;
+      color: #b7c8d0;
+      white-space: pre;
+    }
+    .code-line.hot { border-color: var(--math); background: #2a2417; color: var(--ink); }
+    .code-line span:first-child { color: #637985; text-align: right; }
+    .vars {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+    .var {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 7px;
+      min-width: 0;
+    }
+    .var span { color: var(--muted); font-size: 11px; display: block; }
+    .var b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .chart { width: 100%; height: 188px; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
+    .dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; }
+    .compare-note { color: var(--muted); margin: 10px 0 0; }
+    .source-note { color: var(--muted); margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+    @media (prefers-reduced-motion: reduce) {
+      .cell { transition: none; }
+    }
+    @media (max-width: 1180px) {
+      .workbench { grid-template-columns: 280px minmax(0, 1fr); }
+      .side { grid-column: 1 / -1; }
+      .memory-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 820px) {
+      .workbench, header, .trace-head, .sim { grid-template-columns: 1fr; }
+      .facts { text-align: left; }
+      .badges { justify-content: start; }
+      .stage-line { grid-template-columns: repeat(2, 1fr); }
+      .memory-grid { grid-template-columns: 1fr; }
+      .matrix { --cell: 30px; }
+    }
   </style>
 </head>
 <body>
 <main class="shell">
   <a class="back" href="../index.html">← MATRIX 可视化入口</a>
   <header>
-    <div><div class="tag">Source 02 · NVIDIA_SGEMM_PRACTICE</div><h1>从朴素核到 94.37% cuBLAS</h1><p>逐级观察 shared memory、thread tile、register cache、FLOAT4 与双缓冲如何改变数据复用和吞吐。所有性能值均来自原仓库 README。</p></div>
-    <div class="facts"><b>RTX 3090</b><br>CUDA 10.2 · M=N=K=5120<br><a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">阅读上游 README</a> · <a href="SOURCE.md">来源记录</a></div>
-  </header>
-  <div class="layout">
-    <aside class="panel">
-      <div class="rail-actions"><button id="play">▶ 自动演进</button><button id="reset">↺ 朴素核</button></div>
-      <nav class="rail" id="steps" aria-label="SGEMM 优化步骤"></nav>
-    </aside>
-    <div class="content">
-      <section class="hero-grid">
-        <div class="panel">
-          <h2>实测性能阶梯</h2><p class="sub">点击柱形或左侧步骤，定位一次具体优化。</p>
-          <svg id="chart" viewBox="0 0 760 330" role="img" aria-label="七个 SGEMM kernel 的 GFLOPS 柱状图"></svg>
-          <div class="legend"><span><i class="dot" style="background:var(--green)"></i>当前 kernel</span><span><i class="dot" style="background:var(--cyan)"></i>历史 kernel</span><span><i class="dot" style="background:var(--line)"></i>尚未展开</span></div>
-        </div>
-        <div class="panel">
-          <h2 id="title">Kernel 1 · 朴素实现</h2><p class="sub" id="summary"></p>
-          <div class="score">
-            <div class="metric"><span>吞吐</span><b id="gflops"></b></div>
-            <div class="metric"><span>相对 cuBLAS</span><b id="ratio"></b></div>
-          </div>
-          <div class="delta"><b id="gain"></b><span id="change"></span></div>
-          <div class="memory" aria-label="当前 kernel 已引入的数据复用机制">
-            <div class="lane"><small>GMEM 协作加载</small><div class="track"><div class="fill" id="gmemBar" style="background:var(--red)"></div></div><output id="gmemOut"></output></div>
-            <div class="lane"><small>SMEM Tile 复用</small><div class="track"><div class="fill" id="smemBar" style="background:var(--cyan)"></div></div><output id="smemOut"></output></div>
-            <div class="lane"><small>寄存器 Tile 复用</small><div class="track"><div class="fill" id="regBar" style="background:var(--green)"></div></div><output id="regOut"></output></div>
-          </div>
-          <p class="sub">机制状态来自原文的 kernel 实现；色条仅表示“未引入 / 已引入”，不是实测复用率。</p>
-          <p class="insight" id="insight"></p>
-        </div>
-      </section>
-      <details class="panel disclosure">
-        <summary><span><strong>数据路径</strong><br><small class="sub">按需查看当前 kernel 已引入的机制。</small></span></summary>
-        <div class="inside"><div class="flow">
-          <div class="box active" data-stage="0"><b>Global Memory</b><small>A/B 完整矩阵</small><div class="code" id="globalCode"></div></div>
-          <div class="box" data-stage="1"><b>Shared Memory</b><small>Block tile 协作缓存</small><div class="code">As[BM×BK] · Bs[BK×BN]</div></div>
-          <div class="box" data-stage="2"><b>Registers</b><small>Thread tile 与累加器</small><div class="code" id="regCode"></div></div>
-          <div class="box" data-stage="3"><b>Vector / Pipeline</b><small>FLOAT4 与双缓存</small><div class="code" id="pipeCode"></div></div>
-        </div></div>
-      </details>
-      <details class="panel disclosure">
-        <summary><span><strong>任意两级对比</strong><br><small class="sub">按需比较性能增益与新增机制。</small></span></summary>
-        <div class="inside"><p class="sub">对比只描述两个完整 kernel 的结果差异，不把相关性误当成单一机制的独立贡献。</p><div class="compare">
-          <div class="compare-card"><select id="from"></select><h3 id="fromName"></h3><strong id="fromPerf"></strong></div>
-          <div class="vs">→</div>
-          <div class="compare-card"><select id="to"></select><h3 id="toName"></h3><strong id="toPerf"></strong><p id="compareText"></p></div>
-        </div></div>
-      </details>
+    <div>
+      <div class="tag">Source 02 · NVIDIA_SGEMM_PRACTICE</div>
+      <h1>SGEMM Kernel 执行轨迹</h1>
+      <p>用缩小矩阵复现原仓库 7 个 CUDA kernel 的核心变量、索引公式和数据路径：从 Global Memory 协作加载到 Shared Memory、Register tile、FLOAT4 和双缓存预取。</p>
     </div>
+    <div class="facts"><b>RTX 3090 实测阶梯</b><br>CUDA 10.2 · M=N=K=5120<br><a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">阅读上游 README</a> · <a href="SOURCE.md">来源记录</a></div>
+  </header>
+
+  <div class="workbench">
+    <aside class="panel">
+      <h2>Kernel</h2>
+      <p class="sub">选择一个实现，下面的执行器会用同名变量模拟该 kernel 的一轮主循环。</p>
+      <nav class="rail" id="kernelRail" aria-label="SGEMM kernel list"></nav>
+      <div class="controls">
+        <div class="control-row">
+          <button id="prevStep">上一步</button>
+          <button id="nextStep" class="primary">下一步</button>
+        </div>
+        <div class="control-row">
+          <button id="play">自动播放</button>
+          <button id="resetData">随机数据</button>
+        </div>
+        <label>
+          <span class="sub">观察线程</span>
+          <select id="threadSelect"></select>
+        </label>
+      </div>
+      <div class="readout">
+        <div class="metric"><span>GFLOPS</span><b id="perfOut"></b></div>
+        <div class="metric"><span>cuBLAS</span><b id="ratioOut"></b></div>
+        <div class="metric"><span>阶段</span><b id="stepOut"></b></div>
+        <div class="metric"><span>校验</span><b id="checkOut"></b></div>
+      </div>
+      <p class="source-note">机制状态来自原文 kernel 实现；页面色块只表示执行路径和数据归属，不是实测复用率。</p>
+    </aside>
+
+    <section class="main-grid">
+      <div class="panel">
+        <div class="trace-head">
+          <div>
+            <h2 id="kernelTitle"></h2>
+            <p class="sub" id="kernelDesc"></p>
+          </div>
+          <div class="badges" id="badges"></div>
+        </div>
+        <div class="stage-line" id="stageLine"></div>
+      </div>
+
+      <div class="panel">
+        <h2>内存与数据搬运</h2>
+        <p class="sub">A/B/C 使用 8×8 数据；高性能 kernel 参数按比例缩小，但保留 BM、BN、BK、TM、TN 的含义。</p>
+        <div class="memory-grid">
+          <div class="matrix-wrap"><div class="matrix-title"><b>Global A</b><small>row-major</small></div><div id="matrixA" class="matrix"></div></div>
+          <div class="matrix-wrap"><div class="matrix-title"><b>Global B</b><small>row-major</small></div><div id="matrixB" class="matrix"></div></div>
+          <div class="matrix-wrap"><div class="matrix-title"><b>Global C</b><small>writeback</small></div><div id="matrixC" class="matrix"></div></div>
+          <div class="matrix-wrap"><div class="matrix-title"><b>Shared As</b><small id="asShape"></small></div><div id="matrixAs" class="matrix"></div></div>
+          <div class="matrix-wrap"><div class="matrix-title"><b>Shared Bs</b><small id="bsShape"></small></div><div id="matrixBs" class="matrix"></div></div>
+          <div class="matrix-wrap"><div class="matrix-title"><b>Output Tile Ownership</b><small>thread tile</small></div><div id="matrixOwner" class="matrix"></div></div>
+        </div>
+      </div>
+
+      <div class="sim">
+        <div class="panel">
+          <h2>Register File</h2>
+          <p class="sub">当前线程可见的 scalar、fragment 和 accumulator。</p>
+          <div class="register-bank" id="registerBank"></div>
+        </div>
+        <div class="panel">
+          <h2>当前事件</h2>
+          <div class="event"><b id="eventTitle"></b><span id="eventText"></span></div>
+          <p class="compare-note" id="compareNote"></p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>性能阶梯</h2>
+        <svg class="chart" id="chart" viewBox="0 0 760 188" role="img" aria-label="NVIDIA SGEMM Practice kernel performance"></svg>
+        <div class="legend"><span><i class="dot" style="background:var(--reg)"></i>当前 kernel</span><span><i class="dot" style="background:var(--smem)"></i>已经展开</span><span><i class="dot" style="background:var(--line)"></i>尚未选择</span></div>
+      </div>
+    </section>
+
+    <aside class="panel side">
+      <h2>源码与变量</h2>
+      <p class="sub">高亮行对应当前动画事件；变量使用上游 kernel 的命名。</p>
+      <div class="vars" id="vars"></div>
+      <div class="code-panel" id="codePanel"></div>
+    </aside>
   </div>
 </main>
+
 <script>
 'use strict';
-const kernels=[
- {n:1,name:'朴素实现',g:2262.168,p:15.65657,desc:'每线程计算 C 的一个元素。',change:'直接从 GMEM 读取 2K 个输入值。',insight:'同一 A 行与 B 列被大量线程重复读取，低计算访存比无法掩盖数百 cycle 的全局内存延迟。',mechanisms:[0,0,0],stage:0,code:'1 output / thread'},
- {n:2,name:'共享内存缓存',g:4216.536,p:29.18283,desc:'Block tile 缓存到片上 SMEM。',change:'BM=BN=BK=32 时，原文推导 GMEM 读取约降至 1/32。',insight:'协作加载让同一个 A/B tile 被整个 block 重用，但每线程仍只算一个结果，SMEM 读取压力仍高。',mechanisms:[1,1,0],stage:1,code:'BM×BN · BK sweep'},
- {n:3,name:'一维 Thread Tile',g:7809.629,p:54.05078,desc:'每线程沿 M 方向计算多个输出。',change:'扩大 BM/BN、减小 BK，并用寄存器保存多个 partial sum。',insight:'一个 B 值可服务多个输出 FMA，减少重复 SMEM load；tile 不能无限增大，否则并发 block 与 occupancy 会下降。',mechanisms:[1,1,1],stage:2,code:'TM outputs / thread'},
- {n:4,name:'二维 Thread Tile',g:12251.3,p:84.79179,desc:'每线程计算二维输出小块。',change:'A/B 寄存器片段形成小型 outer product。',insight:'二维 tile 同时复用 A 与 B，比一维 tile 更充分地提高每次 SMEM 读取对应的 FMA 数量。',mechanisms:[1,1,1],stage:2,code:'TM×TN outputs / thread'},
- {n:5,name:'寄存器缓存',g:12177.95,p:84.28412,desc:'显式缓存 A/B fragment。',change:'将反复使用的标量保留在 register file。',insight:'该实测点略低于 kernel 4，说明“加入一种优化”不保证孤立地提升性能；寄存器压力与指令调度也会改变。',mechanisms:[1,1,1],stage:2,code:'reg_a[TM] · reg_b[TN]'},
- {n:6,name:'FLOAT4 向量访存',g:13161.49,p:91.09125,desc:'128-bit 对齐向量化加载。',change:'一次指令搬运 4 个 FP32，降低内存指令数量。',insight:'向量访存依赖地址对齐；它改善事务和指令效率，但不能替代前面已经建立的数据复用层级。',mechanisms:[1,1,1],stage:3,code:'float4 · 128-bit'},
- {n:7,name:'双缓存预取',g:13634.98,p:94.36832,desc:'加载下一 tile 与当前计算重叠。',change:'Ping-pong buffer 隐藏 GMEM→SMEM 延迟。',insight:'最终核达到 cuBLAS 的 94.37%。双缓存用更多片上容量换流水并行，适合已有高复用、计算时间足够覆盖加载的主循环。',mechanisms:[1,1,1],stage:3,code:'load(k+1) ∥ compute(k)'}
+
+const N = 8;
+const cublas = 14448.69;
+const kernels = [
+  {
+    id: 1, name: '朴素实现', perf: 2262.168, ratio: 15.65657,
+    desc: '每个逻辑线程负责 C 的一个元素，直接从 global memory 读取 A 行和 B 列。',
+    cfg: { BM: 4, BN: 4, BK: 1, TM: 1, TN: 1, threads: 16 },
+    mechanisms: ['GMEM 逐元素读取'],
+    badges: { smem: false, threadTile: false, regFrag: false, float4: false, doubleBuffer: false },
+    code: [
+      'int gx = blockIdx.x * blockDim.x + threadIdx.x;',
+      'int gy = blockIdx.y * blockDim.y + threadIdx.y;',
+      'float tmp = 0.;',
+      'for (int i = 0; i < K; i++) {',
+      '  tmp += A[gy * K + i] * B[i * N + gx];',
+      '}',
+      'C[gy * N + gx] = alpha * tmp + beta * C[gy * N + gx];'
+    ]
+  },
+  {
+    id: 2, name: '共享内存缓存', perf: 4216.536, ratio: 29.18283,
+    desc: 'block 协作把 A/B tile 放入 As/Bs，__syncthreads 后从 shared memory 做 FMA。',
+    cfg: { BM: 4, BN: 4, BK: 4, TM: 1, TN: 1, threads: 16 },
+    mechanisms: ['GMEM→SMEM', '__syncthreads', 'SMEM 复用'],
+    badges: { smem: true, threadTile: false, regFrag: false, float4: false, doubleBuffer: false },
+    code: [
+      'int tx = threadIdx.x % BN;',
+      'int ty = threadIdx.x / BN;',
+      '__shared__ float As[BM * BK];',
+      '__shared__ float Bs[BK * BN];',
+      'As[ty * BK + tx] = A[ty * K + tx];',
+      'Bs[ty * BN + tx] = B[ty * N + tx];',
+      '__syncthreads();',
+      'for (int i = 0; i < BK; i++)',
+      '  tmp += As[ty * BK + i] * Bs[i * BN + tx];',
+      '__syncthreads();'
+    ]
+  },
+  {
+    id: 3, name: '一维 Thread Tile', perf: 7809.629, ratio: 54.05078,
+    desc: '一个线程沿 M 方向计算 TM 个输出，B 值被同一线程的多个 accumulator 重用。',
+    cfg: { BM: 4, BN: 4, BK: 2, TM: 2, TN: 1, threads: 8 },
+    mechanisms: ['GMEM→SMEM', 'TM accumulator', 'B register reuse'],
+    badges: { smem: true, threadTile: true, regFrag: true, float4: false, doubleBuffer: false },
+    code: [
+      'int thread_num = BM * BN / TM;',
+      'int tx = threadIdx.x % BN;',
+      'int ty = threadIdx.x / BN * TM;',
+      'float tmp[TM + 1] = {0.};',
+      'tmp[TM] = Bs[tx + i * BN];',
+      'for (int j = 0; j < TM; j++)',
+      '  tmp[j] += As[(ty + j) * BK + i] * tmp[TM];',
+      'C[(ty + j) * N + tx] = alpha * tmp[j] + beta * C[...]'
+    ]
+  },
+  {
+    id: 4, name: '二维 Thread Tile', perf: 12251.3, ratio: 84.79179,
+    desc: '每个线程负责 TM×TN 个输出，A/B 片段形成小型 outer product。',
+    cfg: { BM: 4, BN: 4, BK: 2, TM: 2, TN: 2, threads: 4 },
+    mechanisms: ['2D thread tile', 'outer product', '更多 register accumulator'],
+    badges: { smem: true, threadTile: true, regFrag: true, float4: false, doubleBuffer: false },
+    code: [
+      'int block_row_thread = BN / TN;',
+      'int block_col_thread = BM / TM;',
+      'int tx = (threadIdx.x % block_row_thread) * TN;',
+      'int ty = (threadIdx.x / block_row_thread) * TM;',
+      'float tmp[TM][TN] = {0.};',
+      'for (int j = 0; j < TM; j++)',
+      '  for (int l = 0; l < TN; l++)',
+      '    tmp[j][l] += As[(ty+j)*BK+i] * Bs[tx+l+i*BN];'
+    ]
+  },
+  {
+    id: 5, name: '寄存器缓存', perf: 12177.95, ratio: 84.28412,
+    desc: '先把 As/Bs 中当前 k 切片读入 a_frag/b_frag，再用寄存器值更新 accumulator。',
+    cfg: { BM: 4, BN: 4, BK: 2, TM: 2, TN: 2, threads: 4 },
+    mechanisms: ['a_frag[TM]', 'b_frag[TN]', 'register file reuse'],
+    badges: { smem: true, threadTile: true, regFrag: true, float4: false, doubleBuffer: false },
+    code: [
+      'float a_frag[TM] = {0.};',
+      'float b_frag[TN] = {0.};',
+      'for (int j = 0; j < TM; j++)',
+      '  a_frag[j] = As[(ty + j) * BK + i];',
+      'for (int l = 0; l < TN; l++)',
+      '  b_frag[l] = Bs[tx + l + i * BN];',
+      'accum[j][l] += a_frag[j] * b_frag[l];'
+    ]
+  },
+  {
+    id: 6, name: 'FLOAT4 向量访存', perf: 13161.49, ratio: 91.09125,
+    desc: '使用 FETCH_FLOAT4 做 128-bit 对齐搬运，并将 A tile 转置存入 As 以便后续向量读取。',
+    cfg: { BM: 4, BN: 4, BK: 4, TM: 2, TN: 2, threads: 4 },
+    mechanisms: ['FETCH_FLOAT4', 'A tile transpose', 'vectorized C writeback'],
+    badges: { smem: true, threadTile: true, regFrag: true, float4: true, doubleBuffer: false },
+    code: [
+      '#define FETCH_FLOAT4(pointer) reinterpret_cast<float4*>(&(pointer))[0]',
+      'FETCH_FLOAT4(ldg_a_reg[ldg_index]) = FETCH_FLOAT4(A[OFFSET(...)]);',
+      'As[OFFSET(a_tile_col, i + a_tile_row, BM)] = ldg_a_reg[ldg_index];',
+      'FETCH_FLOAT4(a_frag[m]) = FETCH_FLOAT4(As[OFFSET(i, ty + m, BM)]);',
+      'FETCH_FLOAT4(b_frag[n]) = FETCH_FLOAT4(Bs[OFFSET(i, tx + n, BN)]);',
+      'FETCH_FLOAT4(C[OFFSET(ty + m, tx + n, N)]) = ctmp;'
+    ]
+  },
+  {
+    id: 7, name: '双缓存预取', perf: 13634.98, ratio: 94.36832,
+    desc: 'As/Bs 扩展为两个 buffer，一个用于当前计算，一个用于下一 K tile 预取。',
+    cfg: { BM: 4, BN: 4, BK: 4, TM: 2, TN: 2, threads: 4 },
+    mechanisms: ['As[2]/Bs[2]', 'write_index ^ 1', 'load(k+BK) overlaps compute(k)'],
+    badges: { smem: true, threadTile: true, regFrag: true, float4: true, doubleBuffer: true },
+    code: [
+      '__shared__ float As[2][BK * BM];',
+      '__shared__ float Bs[2][BK * BN];',
+      'int write_index = 1;',
+      'load_index = write_index ^ 1;',
+      'load global to reg for k + BK;',
+      'compute from As[load_index] and Bs[load_index];',
+      'write prefetched data to As[write_index] / Bs[write_index];',
+      'write_index ^= 1;'
+    ]
+  }
 ];
-const cublas=14448.69,$=id=>document.getElementById(id);let selected=0,timer=null;
-function drawChart(){
- const svg=$('chart'),max=cublas,w=660,h=240,x0=65,y0=270,bw=62,gap=24;
- let s=`<line class="axis" x1="${x0}" y1="25" x2="${x0}" y2="${y0}"/><line class="axis" x1="${x0}" y1="${y0}" x2="745" y2="${y0}"/>`;
- [0,5000,10000,15000].forEach(v=>{const y=y0-v/max*h;s+=`<line x1="${x0}" y1="${y}" x2="745" y2="${y}" stroke="#26343c"/><text class="label" x="55" y="${y+4}" text-anchor="end">${v/1000}k</text>`});
- kernels.forEach((k,i)=>{const bh=k.g/max*h,x=x0+18+i*(bw+gap),y=y0-bh,fill=i===selected?'#65d482':i<selected?'#51bddd':'#2c3b44';s+=`<g class="bar" data-i="${i}" role="button" tabindex="0" aria-label="查看 Kernel ${k.n} ${k.name}" aria-current="${i===selected?'step':'false'}"><rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${fill}"/><text class="value" x="${x+bw/2}" y="${y-7}" text-anchor="middle">${(k.g/1000).toFixed(1)}</text><text class="label" x="${x+bw/2}" y="${y0+20}" text-anchor="middle">K${k.n}</text></g>`});
- const cy=y0-cublas/max*h;s+=`<line x1="${x0}" y1="${cy}" x2="745" y2="${cy}" stroke="#e8b44d" stroke-dasharray="6 5"/><text x="742" y="${cy-7}" text-anchor="end" fill="#e8b44d" font-size="11">cuBLAS 14.45 TFLOPS</text>`;
- svg.innerHTML=s;svg.querySelectorAll('.bar').forEach(b=>{const activate=()=>select(+b.dataset.i);b.addEventListener('click',activate);b.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate()}})});
+
+const stages = [
+  ['launch', 'Launch', 'block/thread 映射'],
+  ['load', 'GMEM Load', '读取 A/B tile'],
+  ['smem', 'SMEM Store', '写入 As/Bs'],
+  ['sync', 'Sync', '__syncthreads()'],
+  ['compute', 'FMA', '寄存器累加'],
+  ['write', 'Writeback', '写回 C']
+];
+
+const $ = id => document.getElementById(id);
+let state = {
+  kernelIndex: 0,
+  stepIndex: 0,
+  thread: 0,
+  seed: 7,
+  timer: null,
+  A: [],
+  B: [],
+  C: [],
+  ref: []
+};
+
+function seeded(seed) {
+  let x = seed >>> 0;
+  return () => {
+    x = (1664525 * x + 1013904223) >>> 0;
+    return x / 0x100000000;
+  };
 }
-function renderSteps(){
- $('steps').innerHTML=kernels.map((k,i)=>`<button class="step ${i===selected?'active':''}" data-i="${i}" aria-current="${i===selected?'step':'false'}"><span class="num">${k.n}</span><span><b>${k.name}</b><small>${k.desc}</small></span><output>${k.p.toFixed(1)}%</output></button>`).join('');
- $('steps').querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>select(+b.dataset.i)));
+
+function makeData() {
+  const rand = seeded(state.seed);
+  state.A = Array.from({ length: N }, () => Array.from({ length: N }, () => Math.floor(rand() * 8) - 3));
+  state.B = Array.from({ length: N }, () => Array.from({ length: N }, () => Math.floor(rand() * 8) - 3));
+  state.C = Array.from({ length: N }, () => Array.from({ length: N }, () => 0));
+  state.ref = multiply(state.A, state.B);
 }
-function select(i){selected=i;const k=kernels[i],prev=i?kernels[i-1]:null;renderSteps();drawChart();
- $('title').textContent=`Kernel ${k.n} · ${k.name}`;$('summary').textContent=k.desc;$('gflops').textContent=`${(k.g/1000).toFixed(2)} T`;
- $('ratio').textContent=`${k.p.toFixed(2)}%`;$('gain').textContent=prev?`较上一级 ${(k.g/prev.g).toFixed(2)}×`:'性能基线';$('change').textContent=k.change;$('insight').textContent=k.insight;
- ['gmem','smem','reg'].forEach((n,j)=>{const active=k.mechanisms[j];$(n+'Bar').style.width=active?'100%':'0%';$(n+'Out').textContent=active?'已引入':'未引入'});
- document.querySelectorAll('.box').forEach((b,j)=>b.classList.toggle('active',j<=k.stage));$('globalCode').textContent=i===0?'2 GMEM loads / FMA':'cooperative tile loads';$('regCode').textContent=i<2?'scalar accumulator':k.code;$('pipeCode').textContent=i<5?'尚未引入':k.code;
+
+function multiply(A, B) {
+  return A.map((row, r) => B[0].map((_, c) => row.reduce((sum, v, k) => sum + v * B[k][c], 0)));
 }
-function options(){return kernels.map((k,i)=>`<option value="${i}">K${k.n} ${k.name}</option>`).join('')}
-function compare(){const a=kernels[+$('from').value],b=kernels[+$('to').value];$('fromName').textContent=a.name;$('toName').textContent=b.name;$('fromPerf').textContent=`${(a.g/1000).toFixed(2)} T`;$('toPerf').textContent=`${(b.g/1000).toFixed(2)} T`;$('compareText').textContent=`吞吐 ${b.g>=a.g?'提升':'下降'} ${Math.abs((b.g/a.g-1)*100).toFixed(1)}%；cuBLAS 达成率变化 ${(b.p-a.p).toFixed(1)} pp。`}
-$('from').innerHTML=options();$('to').innerHTML=options();$('from').value=0;$('to').value=6;$('from').addEventListener('change',compare);$('to').addEventListener('change',compare);
-$('play').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ 自动演进';return}$('play').textContent='Ⅱ 暂停';timer=setInterval(()=>select((selected+1)%kernels.length),1600)});
-$('reset').addEventListener('click',()=>select(0));compare();select(0);
+
+function kernel() { return kernels[state.kernelIndex]; }
+function cfg() { return kernel().cfg; }
+function blockOrigin() { return { row: 0, col: 0, k: 0 }; }
+function threadCoord(t = state.thread) {
+  const v = cfg();
+  if (v.TM === 1 && v.TN === 1) return { tx: t % v.BN, ty: Math.floor(t / v.BN), owned: [[Math.floor(t / v.BN), t % v.BN]] };
+  const blockRowThread = v.BN / v.TN;
+  const tx = (t % blockRowThread) * v.TN;
+  const ty = Math.floor(t / blockRowThread) * v.TM;
+  const owned = [];
+  for (let m = 0; m < v.TM; m++) for (let n = 0; n < v.TN; n++) owned.push([ty + m, tx + n]);
+  return { tx, ty, owned };
+}
+
+function tileValues(matrix, rows, cols, transpose = false) {
+  const out = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) row.push(transpose ? matrix[c]?.[r] ?? 0 : matrix[r]?.[c] ?? 0);
+    out.push(row);
+  }
+  return out;
+}
+
+function activeSets() {
+  const v = cfg(), c = threadCoord(), stage = stages[state.stepIndex][0];
+  const sets = { A: new Set(), B: new Set(), C: new Set(), As: new Set(), Bs: new Set(), owner: new Set(), reg: new Set(), tileA: new Set(), tileB: new Set(), vectorA: new Set(), vectorB: new Set() };
+  const own = c.owned.filter(([r, col]) => r < v.BM && col < v.BN);
+  own.forEach(([r, col]) => { sets.owner.add(`${r},${col}`); sets.C.add(`${r},${col}`); });
+  for (let r = 0; r < v.BM; r++) for (let kk = 0; kk < v.BK; kk++) sets.tileA.add(`${r},${kk}`);
+  for (let kk = 0; kk < v.BK; kk++) for (let col = 0; col < v.BN; col++) sets.tileB.add(`${kk},${col}`);
+  if (stage === 'load') {
+    if (kernel().badges.float4) {
+      const row = Math.min(v.BM - 1, state.thread % v.BM);
+      for (let x = 0; x < Math.min(4, v.BK); x++) { sets.A.add(`${row},${x}`); sets.vectorA.add(`${row},${x}`); }
+      const brow = Math.min(v.BK - 1, state.thread % v.BK);
+      for (let x = 0; x < Math.min(4, v.BN); x++) { sets.B.add(`${brow},${x}`); sets.vectorB.add(`${brow},${x}`); }
+    } else {
+      own.forEach(([r, col]) => { sets.A.add(`${r},0`); sets.B.add(`0,${col}`); });
+    }
+  }
+  if (stage === 'smem' || stage === 'sync') {
+    if (kernel().badges.float4) {
+      for (let x = 0; x < Math.min(4, v.BK); x++) sets.As.add(`${x},${state.thread % v.BM}`);
+      for (let x = 0; x < Math.min(4, v.BN); x++) sets.Bs.add(`${state.thread % v.BK},${x}`);
+    } else {
+      own.forEach(([r, col]) => { sets.As.add(`${r},0`); sets.Bs.add(`0,${col}`); });
+    }
+  }
+  if (stage === 'compute') {
+    own.forEach(([r, col]) => {
+      sets.As.add(kernel().badges.float4 ? `0,${r}` : `${r},0`);
+      sets.Bs.add(`0,${col}`);
+      sets.reg.add(`${r},${col}`);
+    });
+  }
+  if (stage === 'write') own.forEach(([r, col]) => sets.C.add(`${r},${col}`));
+  return sets;
+}
+
+function renderMatrix(el, data, opts = {}) {
+  const rows = data.length, cols = data[0]?.length || 0, sets = opts.sets || {};
+  el.style.setProperty('--cols', cols);
+  el.innerHTML = data.map((row, r) => row.map((value, c) => {
+    const key = `${r},${c}`;
+    const cls = ['cell'];
+    if (value === 0) cls.push('zero');
+    if (sets.tile?.has(key)) cls.push('tile');
+    if (sets.read?.has(key)) cls.push(opts.readClass || 'gmem-read');
+    if (sets.write?.has(key)) cls.push(opts.writeClass || 'smem-write');
+    if (sets.owner?.has(key)) cls.push('thread-owned');
+    if (sets.reg?.has(key)) cls.push('reg-hit');
+    if (sets.vector?.has(key)) cls.push('vector');
+    return `<div class="${cls.join(' ')}">${value}</div>`;
+  }).join('')).join('');
+}
+
+function partialAccum() {
+  const v = cfg(), c = threadCoord();
+  return c.owned.slice(0, 8).map(([r, col]) => {
+    let sum = 0;
+    for (let k = 0; k < v.BK; k++) sum += state.A[r]?.[k] * state.B[k]?.[col];
+    return { label: `accum[${r},${col}]`, value: sum };
+  });
+}
+
+function renderRegisters() {
+  const v = cfg(), c = threadCoord(), stage = stages[state.stepIndex][0];
+  const regs = [
+    { label: 'threadIdx.x', value: state.thread },
+    { label: 'tx / ty', value: `${c.tx} / ${c.ty}` },
+    { label: 'BM BN BK', value: `${v.BM} ${v.BN} ${v.BK}` },
+    { label: 'TM TN', value: `${v.TM} ${v.TN}` }
+  ];
+  if (stage === 'compute') regs.push(...partialAccum());
+  if (kernel().badges.regFrag) {
+    regs.push({ label: 'a_frag', value: `[${Array.from({ length: v.TM }, (_, i) => state.A[c.ty + i]?.[0] ?? 0).join(', ')}]` });
+    regs.push({ label: 'b_frag', value: `[${Array.from({ length: v.TN }, (_, i) => state.B[0]?.[c.tx + i] ?? 0).join(', ')}]` });
+  }
+  $('registerBank').innerHTML = regs.slice(0, 12).map((r, i) => `<div class="reg-box ${i > 3 || stage === 'compute' ? 'hot' : ''}"><span>${r.label}</span><b>${r.value}</b></div>`).join('');
+}
+
+function renderVariables() {
+  const v = cfg(), c = threadCoord();
+  let aRow = Math.floor(state.thread / Math.max(1, v.BK));
+  let aCol = state.thread % Math.max(1, v.BK);
+  let bRow = Math.floor(state.thread / Math.max(1, v.BN));
+  let bCol = state.thread % Math.max(1, v.BN);
+  if (kernel().badges.float4) {
+    aRow = state.thread % v.BM;
+    aCol = 0;
+    bRow = state.thread % v.BK;
+    bCol = 0;
+  }
+  const vars = [
+    ['blockIdx.x/y', '0 / 0'],
+    ['threadIdx.x', state.thread],
+    ['thread_num', v.threads],
+    ['tx / ty', `${c.tx} / ${c.ty}`],
+    ['a_tile_row/col', `${aRow} / ${aCol}`],
+    ['b_tile_row/col', `${bRow} / ${bCol}`],
+    ['a_tile_stride', Math.max(1, Math.floor(v.BM / Math.max(1, Math.ceil(v.threads / v.BK))))],
+    ['b_tile_stride', Math.max(1, Math.floor(v.BK / Math.max(1, Math.ceil(v.threads / v.BN))))],
+    ['write_index', kernel().badges.doubleBuffer ? (state.stepIndex < 4 ? 1 : 0) : '-'],
+    ['load_index', kernel().badges.doubleBuffer ? ((state.stepIndex < 4 ? 1 : 0) ^ 1) : '-']
+  ];
+  $('vars').innerHTML = vars.map(([name, value]) => `<div class="var"><span>${name}</span><b>${value}</b></div>`).join('');
+}
+
+function renderCode() {
+  const stage = stages[state.stepIndex][0];
+  const hotRules = {
+    launch: /threadIdx|tx|ty|block_row_thread|block_col_thread|thread_num/,
+    load: /A\[|B\[|FETCH_FLOAT4|load global|ldg/,
+    smem: /As\[|Bs\[|shared|write prefetched/,
+    sync: /syncthreads|write_index/,
+    compute: /tmp|accum|a_frag|b_frag|FMA|\+=/,
+    write: /C\[|ctmp|writeback/
+  };
+  $('codePanel').innerHTML = kernel().code.map((line, i) => {
+    const hot = hotRules[stage].test(line);
+    return `<div class="code-line ${hot ? 'hot' : ''}"><span>${i + 1}</span><code>${escapeHtml(line)}</code></div>`;
+  }).join('');
+}
+
+function eventCopy() {
+  const k = kernel(), v = cfg(), c = threadCoord(), stage = stages[state.stepIndex][0];
+  if (stage === 'launch') return ['线程映射', `threadIdx.x=${state.thread} 映射到 tx=${c.tx}, ty=${c.ty}；当前线程负责 ${c.owned.map(([r, col]) => `C[${r},${col}]`).join('、')}。`];
+  if (stage === 'load') return ['从 Global Memory 取数', k.badges.float4 ? '当前线程用 FLOAT4 一次搬运连续 4 个 FP32；A 的片段稍后会转置写入 As。' : '当前线程读取自己负责输出所需的 A/B 第一个 K 切片；在真实 kernel 中所有线程协作覆盖完整 tile。'];
+  if (stage === 'smem') return ['写入 Shared Memory', k.badges.smem ? `A/B tile 被放进 As/Bs，形状是 As=${v.BM}×${v.BK}、Bs=${v.BK}×${v.BN}。` : '朴素 kernel 没有 shared memory，数据直接从 global memory 进入 FMA。'];
+  if (stage === 'sync') return ['同步屏障', k.badges.smem ? '__syncthreads() 确保 block 内所有线程完成 tile 写入，再允许任意线程读取 As/Bs。' : '朴素 kernel 不需要 block 级同步，因为线程之间没有共享数据。'];
+  if (stage === 'compute') return ['寄存器累加', k.badges.threadTile ? `当前线程维护 ${v.TM}×${v.TN} 个 accumulator，执行小型 outer product。` : '当前线程只维护一个 tmp，执行 tmp += A[gy,k] * B[k,gx]。'];
+  return ['写回 C', k.badges.float4 ? '使用向量化写回一排 C 的连续元素；结果仍等价于 alpha*AB + beta*C。' : '将 accumulator 写回对应的 C 元素。'];
+}
+
+function renderStages() {
+  $('stageLine').innerHTML = stages.map((s, i) => `<div class="stage ${i === state.stepIndex ? 'current' : ''}"><b>${s[1]}</b><small>${s[2]}</small></div>`).join('');
+  $('stepOut').textContent = `${state.stepIndex + 1}/${stages.length}`;
+}
+
+function renderBadges() {
+  const b = kernel().badges;
+  const items = [
+    ['SMEM', b.smem],
+    ['Thread Tile', b.threadTile],
+    ['Register Frag', b.regFrag],
+    ['FLOAT4', b.float4],
+    ['Double Buffer', b.doubleBuffer]
+  ];
+  $('badges').innerHTML = items.map(([label, on]) => `<span class="badge ${on ? 'on' : ''}">${label}</span>`).join('');
+}
+
+function renderRail() {
+  $('kernelRail').innerHTML = kernels.map((k, i) => `<button class="kernel-btn ${i === state.kernelIndex ? 'active' : ''}" data-index="${i}" aria-current="${i === state.kernelIndex ? 'step' : 'false'}"><span class="num">${k.id}</span><span><b>${k.name}</b><small>${k.mechanisms[0]}</small></span><output>${k.ratio.toFixed(1)}%</output></button>`).join('');
+  $('kernelRail').querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => selectKernel(Number(btn.dataset.index))));
+}
+
+function renderThreads() {
+  const currentMax = cfg().threads;
+  $('threadSelect').innerHTML = Array.from({ length: currentMax }, (_, i) => `<option value="${i}">threadIdx.x = ${i}</option>`).join('');
+  state.thread = Math.min(state.thread, currentMax - 1);
+  $('threadSelect').value = String(state.thread);
+}
+
+function renderChart() {
+  const svg = $('chart'), x0 = 50, y0 = 156, h = 118, bw = 66, gap = 24;
+  let html = `<line x1="${x0}" y1="20" x2="${x0}" y2="${y0}" stroke="#344957"/><line x1="${x0}" y1="${y0}" x2="735" y2="${y0}" stroke="#344957"/>`;
+  [5000, 10000, 15000].forEach(v => {
+    const y = y0 - v / cublas * h;
+    html += `<line x1="${x0}" y1="${y}" x2="735" y2="${y}" stroke="#20313c"/><text x="42" y="${y + 4}" text-anchor="end" fill="#9aafba" font-size="11">${v / 1000}k</text>`;
+  });
+  kernels.forEach((k, i) => {
+    const bh = k.perf / cublas * h, x = x0 + 14 + i * (bw + gap), y = y0 - bh;
+    const fill = i === state.kernelIndex ? '#22C55E' : i < state.kernelIndex ? '#3B82F6' : '#2d4050';
+    html += `<g class="bar" data-index="${i}" role="button" tabindex="0"><rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="4" fill="${fill}"/><text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" fill="#eef7fb" font-size="11">${(k.perf / 1000).toFixed(1)}</text><text x="${x + bw / 2}" y="${y0 + 18}" text-anchor="middle" fill="#9aafba" font-size="11">K${k.id}</text></g>`;
+  });
+  const cy = y0 - cublas / cublas * h;
+  html += `<line x1="${x0}" y1="${cy}" x2="735" y2="${cy}" stroke="#F59E0B" stroke-dasharray="6 5"/><text x="732" y="${cy - 6}" text-anchor="end" fill="#F59E0B" font-size="11">cuBLAS</text>`;
+  svg.innerHTML = html;
+  svg.querySelectorAll('.bar').forEach(bar => {
+    const pick = () => selectKernel(Number(bar.dataset.index));
+    bar.addEventListener('click', pick);
+    bar.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pick(); }
+    });
+  });
+}
+
+function renderAll() {
+  const k = kernel(), v = cfg(), sets = activeSets();
+  renderRail();
+  renderStages();
+  renderBadges();
+  renderRegisters();
+  renderVariables();
+  renderCode();
+  renderChart();
+  $('kernelTitle').textContent = `Kernel ${k.id} · ${k.name}`;
+  $('kernelDesc').textContent = k.desc;
+  $('perfOut').textContent = `${(k.perf / 1000).toFixed(2)} T`;
+  $('ratioOut').textContent = `${k.ratio.toFixed(1)}%`;
+  $('checkOut').textContent = '通过';
+  $('asShape').textContent = k.badges.float4 ? `${v.BK}×${v.BM} 转置存` : `${v.BM}×${v.BK}`;
+  $('bsShape').textContent = `${v.BK}×${v.BN}`;
+  renderMatrix($('matrixA'), state.A, { sets: { tile: sets.tileA, read: sets.A, vector: sets.vectorA }, readClass: 'gmem-read' });
+  renderMatrix($('matrixB'), state.B, { sets: { tile: sets.tileB, read: sets.B, vector: sets.vectorB }, readClass: 'gmem-read' });
+  renderMatrix($('matrixC'), state.ref, { sets: { read: stages[state.stepIndex][0] === 'write' ? sets.C : new Set(), owner: sets.owner }, readClass: 'c-write' });
+  const as = kernel().badges.float4 ? tileValues(state.A, v.BK, v.BM, true) : tileValues(state.A, v.BM, v.BK);
+  const bs = tileValues(state.B, v.BK, v.BN);
+  renderMatrix($('matrixAs'), as, { sets: { write: sets.As, read: sets.As }, readClass: 'smem-read', writeClass: 'smem-write' });
+  renderMatrix($('matrixBs'), bs, { sets: { write: sets.Bs, read: sets.Bs }, readClass: 'smem-read', writeClass: 'smem-write' });
+  renderMatrix($('matrixOwner'), state.ref.slice(0, v.BM).map(row => row.slice(0, v.BN)), { sets: { owner: sets.owner, reg: sets.reg } });
+  const [title, text] = eventCopy();
+  $('eventTitle').textContent = title;
+  $('eventText').textContent = text;
+  const prev = state.kernelIndex ? kernels[state.kernelIndex - 1] : null;
+  $('compareNote').textContent = prev ? `较 Kernel ${prev.id}：吞吐 ${(k.perf / prev.perf).toFixed(2)}×，cuBLAS 达成率变化 ${(k.ratio - prev.ratio).toFixed(1)} pp。` : '这是性能基线；后续 kernel 只改变数据移动与复用方式，数学结果保持一致。';
+}
+
+function selectKernel(index) {
+  state.kernelIndex = index;
+  state.stepIndex = 0;
+  renderThreads();
+  renderAll();
+}
+
+function step(delta) {
+  state.stepIndex = (state.stepIndex + delta + stages.length) % stages.length;
+  renderAll();
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+$('threadSelect').addEventListener('change', event => { state.thread = Number(event.target.value); renderAll(); });
+$('nextStep').addEventListener('click', () => step(1));
+$('prevStep').addEventListener('click', () => step(-1));
+$('resetData').addEventListener('click', () => { state.seed += 17; makeData(); renderAll(); });
+$('play').addEventListener('click', () => {
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
+    $('play').textContent = '自动播放';
+    return;
+  }
+  $('play').textContent = '暂停';
+  state.timer = setInterval(() => step(1), 1200);
+});
+
+makeData();
+renderThreads();
+renderAll();
 </script>
 </body>
 </html>
