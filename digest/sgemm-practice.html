@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <title>NVIDIA_SGEMM_PRACTICE 中文导读</title>
+</head>
+<body>
+  <main class="shell">
+    <a class="back" href="index.html">← Digest 入口</a>
+    <header>
+      <div class="tag">Source 02 · 中文导读补充</div>
+      <h1>七个 SGEMM kernel：每一步到底多做了什么</h1>
+      <p class="lead">这个 GitHub 仓库适合对照代码学习。它把 SGEMM 优化拆成七个版本，并给出 RTX 3090 上的性能阶梯。下面按“每一步解决什么问题”重新讲一遍。</p>
+      <p>原始仓库：<a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">wangzyon/NVIDIA_SGEMM_PRACTICE</a></p>
+    </header>
+
+    <section class="section">
+      <h2>原文线索</h2>
+      <div class="source-note"><b>原文主题：</b>Step-by-step optimization of CUDA SGEMM。仓库用多个 kernel 展示从朴素实现到 shared memory、thread tile、寄存器缓存、FLOAT4、double buffering 的演进。</div>
+      <div class="source-note"><b>关键数据：</b>本站现有可视化使用 README 中 RTX 3090、M=N=K=5120 的性能阶梯：从约 2.26 TFLOP/s 到约 13.63 TFLOP/s。</div>
+      <div class="guide">这篇材料更像“练功房”。Boehm 文章讲为什么，这个仓库更适合看“代码到底怎么写”。读它时不要只看最后最快的 kernel，要看每个版本比上一个版本多解决了哪一个瓶颈。</div>
+    </section>
+
+    <section class="section">
+      <h2>原文结构脉络</h2>
+      <div class="map">
+        <div class="map-row"><b>README 主线</b><span>用一组可运行 CUDA kernel 展示 SGEMM 性能如何逐级上升。</span></div>
+        <div class="map-row"><b>性能表</b><span>每个 kernel 都有吞吐和相对 cuBLAS 的比例，方便看优化收益。</span></div>
+        <div class="map-row"><b>代码对照</b><span>每个版本保留核心 CUDA 代码，便于直接查看线程索引、tile 形状和访存语句。</span></div>
+        <div class="map-row"><b>工程重点</b><span>共享内存、寄存器缓存、FLOAT4、双缓冲都不是概念，而是对应到具体代码路径。</span></div>
+      </div>
+      <div class="guide">读这个仓库时，最有效的方法是“先看性能表，再看相邻两个 kernel 的 diff”。只看最终版本会很难；相邻版本对比能清楚看到每次优化只解决一个主要矛盾。</div>
+    </section>
+
+    <section class="section">
+      <h2>七级优化阶梯</h2>
+      <div class="map">
+        <div class="map-row"><b>Kernel 1</b><span>朴素实现：每个线程算一个 C 元素，直接从 GMEM 读 A 行和 B 列。</span></div>
+        <div class="map-row"><b>Kernel 2</b><span>共享内存缓存：block 内线程协作把 A/B tile 搬到 SMEM。</span></div>
+        <div class="map-row"><b>Kernel 3</b><span>一维 thread tile：一个线程沿 M 方向算多个 C，复用同一个 B 值。</span></div>
+        <div class="map-row"><b>Kernel 4</b><span>二维 thread tile：一个线程算 TM×TN 的 C 小块，形成小 outer product。</span></div>
+        <div class="map-row"><b>Kernel 5</b><span>寄存器缓存：把当前 K 切片的 A/B fragment 先读入寄存器。</span></div>
+        <div class="map-row"><b>Kernel 6</b><span>FLOAT4 向量访存：一次搬 4 个 FP32，减少内存事务。</span></div>
+        <div class="map-row"><b>Kernel 7</b><span>双缓存预取：计算当前 tile 的同时准备下一批 tile，隐藏搬运延迟。</span></div>
+      </div>
+      <div class="guide plain">如果继续用厨房类比：Kernel 1 是每炒一口菜就去仓库；Kernel 2 是先把一箱菜搬到灶台边；Kernel 4 是一个厨师一次处理一小盘组合菜；Kernel 7 是这盘还在炒，下一盘已经备好了。</div>
+    </section>
+
+    <section class="section">
+      <h2>为什么参数 BM、BN、BK、TM、TN 很重要</h2>
+      <p>这些参数决定了切块大小和线程分工。它们不是随便调的数字，而是在容量、并行度、访存连续性之间做平衡。</p>
+      <div class="mini-grid">
+        <div class="mini"><b>BM / BN</b><p>一个 block 负责的 C tile 高度和宽度。越大，复用潜力越大，但资源压力也越大。</p></div>
+        <div class="mini"><b>BK</b><p>每轮 K-loop 搬多少深度的 A/B tile。BK 影响 SMEM 占用和循环次数。</p></div>
+        <div class="mini"><b>TM / TN</b><p>一个线程负责的 C 子块大小。越大，寄存器复用越多，但寄存器占用也会上升。</p></div>
+        <div class="mini"><b>thread_num</b><p>由 `(BM/TM) × (BN/TN)` 推导，必须和线程分工匹配。</p></div>
+      </div>
+      <div class="guide">看可视化时，建议先固定 M=N=K=16，只调 BM/BN/BK/TM/TN。你会看到：参数改变的不是数学结果，而是“谁搬数据、谁算哪块、数据在哪里复用”。</div>
+    </section>
+
+    <section class="section">
+      <h2>读代码时抓住三条线</h2>
+      <div class="mini-grid">
+        <div class="mini"><b>数据搬运线</b><p>GMEM → SMEM → Register。问自己：这一步数据从哪里来，到哪里去？</p></div>
+        <div class="mini"><b>线程负责线</b><p>threadIdx.x 映射到 C 的哪一行哪一列？一个线程负责几个输出？</p></div>
+        <div class="mini"><b>K-loop 线</b><p>每一轮 K tile 会贡献一部分累加，所有轮加完才是最终 C。</p></div>
+        <div class="mini"><b>同步线</b><p>什么时候必须 `__syncthreads()`？一般是共享数据写完再读、读完再覆盖。</p></div>
+      </div>
+      <div class="guide">这也是我们可视化页面用颜色分层的原因：浅红表示当前线程完整会扫过的 GMEM 范围，深红表示当前步骤正在读的 GMEM 元素，蓝色表示 SMEM，绿色表示线程负责的输出。</div>
+    </section>
+
+    <section class="section">
+      <h2>这篇材料最适合怎么学</h2>
+      <ol>
+        <li>先打开可视化，选 Kernel 1，看一个线程怎么用 A 行和 B 列算 C。</li>
+        <li>切到 Kernel 2，看 A/B tile 如何进入 Shared Memory。</li>
+        <li>切到 Kernel 4/5，看一个线程不再只算一个 C，而是算一块 C。</li>
+        <li>最后看 Kernel 6/7，理解向量化和双缓存属于“进一步压榨数据搬运”的技巧。</li>
+      </ol>
+      <div class="actions">
+        <a class="button" href="../sgemm-practice/index.html">打开本站可视化</a>
+        <a class="button" href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">回到原始仓库</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

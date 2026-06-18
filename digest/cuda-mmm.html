@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <title>CUDA MMM Worklog 中文导读</title>
+</head>
+<body>
+  <main class="shell">
+    <a class="back" href="index.html">← Digest 入口</a>
+    <header>
+      <div class="tag">Source 01 · 中文导读补充</div>
+      <h1>从最笨的矩阵乘法，走到接近 cuBLAS</h1>
+      <p class="lead">原文是一篇优化工作日志。它的价值不是只给结论，而是把“为什么慢、改哪里、提升多少”按 kernel 版本铺开。下面保留这条主线，并在每一段后面加中文解释。</p>
+      <p>原始网页：<a href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance</a></p>
+    </header>
+
+    <section class="section">
+      <h2>原文线索</h2>
+      <div class="source-note"><b>原文主题：</b>用 CUDA 手写 SGEMM，从 Naive kernel 逐步加入 coalescing、shared memory、block tiling、vectorized access、autotuning、warptiling，最后接近 cuBLAS 的 FP32 性能。</div>
+      <div class="source-note"><b>关键数据：</b>原文 A6000 示例从 Naive 约 309 GFLOP/s 开始，最后 warptiling 版本约 21.8 TFLOP/s，接近 cuBLAS 的 93% 以上。</div>
+      <div class="guide plain">先不要被这些数字吓到。你只要记住：同一台 GPU，算法数学公式没变，只是数据的“排队方式、搬运方式、复用方式”变了，速度就能差几十倍。</div>
+    </section>
+
+    <section class="section">
+      <h2>原文结构脉络</h2>
+      <div class="map">
+        <div class="map-row"><b>开篇问题</b><span>为什么矩阵乘法对深度学习这么重要，以及手写 CUDA SGEMM 离 cuBLAS 有多远。</span></div>
+        <div class="map-row"><b>Kernel 1</b><span>朴素实现：一个线程算一个 C 元素，暴露最基础的 GMEM 访问问题。</span></div>
+        <div class="map-row"><b>Kernel 2</b><span>Global memory coalescing：让同一 warp 的访问更连续。</span></div>
+        <div class="map-row"><b>Kernel 3</b><span>Shared memory cache-blocking：把 A/B tile 先搬到 block 共享的小缓存。</span></div>
+        <div class="map-row"><b>Kernel 4-6</b><span>Block tiling、thread tiling、vectorized access：逐步提高复用率和访存效率。</span></div>
+        <div class="map-row"><b>后续版本</b><span>Autotuning 与 warptiling：把参数搜索和 warp 级分工纳入优化。</span></div>
+      </div>
+      <div class="guide">这篇原文最适合按“版本升级日志”来读。每一版都不是推翻上一版，而是在上一版的瓶颈上再修一层：先让访问连续，再让数据复用，再让线程负责更多输出，再让 warp 层级更合理。</div>
+    </section>
+
+    <section class="section">
+      <h2>第一层：Naive kernel 到底在做什么</h2>
+      <p>最朴素的做法是：一个线程负责输出矩阵 C 的一个元素。这个线程拿 A 的一整行、B 的一整列，沿着 K 方向一个个相乘再加起来。</p>
+      <pre>C[row, col] = sum over k: A[row, k] * B[k, col]</pre>
+      <div class="guide">这里的关键不是公式，而是访问路径。一个线程为了算一个 C 元素，会扫过 A 的一行和 B 的一列。如果很多线程各扫各的，就可能重复读同一批 A/B 数据。数学上很清楚，硬件上却很浪费。</div>
+      <div class="guide plain">像一群人同时做饭，每个人都去仓库拿同一袋米。饭没问题，但路上浪费太多时间。</div>
+    </section>
+
+    <section class="section">
+      <h2>第二层：coalescing 是让 32 个线程排好队拿东西</h2>
+      <p>GPU 不是一个线程一个线程地随便跑。常见执行单位是 warp，一组 32 个线程一起执行。如果这 32 个线程访问连续地址，硬件可以把多次小访问合并成少数几次大事务。</p>
+      <div class="guide">Coalescing 的中文直觉是“合并访存”。不是让算法少算，而是让同一 warp 里的线程访问地址尽量连续。连续访问像整箱搬货；离散访问像每次只拿一件，还要跑很多趟。</div>
+      <div class="map">
+        <div class="map-row"><b>坏访问</b><span>相邻线程访问相距很远的地址，硬件无法合并，带宽浪费严重。</span></div>
+        <div class="map-row"><b>好访问</b><span>相邻线程访问连续 float，32 个线程可以接近一次 128B 事务。</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>第三层：Shared Memory 是 block 的小货架</h2>
+      <p>当一块 A/B 数据会被同一个 block 里的多个线程反复使用时，就值得先把它从 Global Memory 搬到 Shared Memory。</p>
+      <div class="guide">SMEM 的作用不是“凭空变快”，而是把远处仓库的数据搬到近处货架。搬一次以后，block 内线程可以反复用它。矩阵乘法非常适合这样做，因为 A 的一个 tile 会服务 C 的多列，B 的一个 tile 会服务 C 的多行。</div>
+      <pre>for each K tile:
+  load A tile and B tile from GMEM to SMEM
+  __syncthreads()
+  compute many FMA using SMEM data
+  __syncthreads()</pre>
+      <div class="guide">两个同步点都很重要：第一次保证货架装满了再取；第二次保证大家用完了再换下一批货。</div>
+    </section>
+
+    <section class="section">
+      <h2>第四层：tiling 是把大矩阵切成小任务</h2>
+      <p>Block tiling、thread tiling、warp tiling 都是在回答同一个问题：这块 C 由谁负责？A/B 的哪一块会被复用？中间结果放哪里？</p>
+      <div class="mini-grid">
+        <div class="mini"><b>Block tile</b><p>一个 thread block 负责 C 的一块矩形区域。</p></div>
+        <div class="mini"><b>Warp tile</b><p>block 内的不同 warp 再分 C 的子块。</p></div>
+        <div class="mini"><b>Thread tile</b><p>一个线程不只算一个 C，而是算一小片 C。</p></div>
+        <div class="mini"><b>Register tile</b><p>线程自己的多个 accumulator 放在寄存器里。</p></div>
+      </div>
+      <div class="guide plain">切块不是为了好看，而是为了“同一批食材尽量多做几道菜”。切得合适，搬一次 A/B，就能贡献很多个 C。</div>
+    </section>
+
+    <section class="section">
+      <h2>第五层：读完这篇后应该带走什么</h2>
+      <ul>
+        <li>Naive 慢，主要是数据访问太散、复用太低。</li>
+        <li>Coalescing 先把 global memory 访问排整齐。</li>
+        <li>SMEM 把可复用数据搬到更近的位置。</li>
+        <li>Thread/warp tiling 把中间结果留在寄存器里，多算少搬。</li>
+        <li>最后的性能来自一整套配合，不是某一个技巧单独起作用。</li>
+      </ul>
+      <div class="actions">
+        <a class="button" href="../cuda-matmul-worklog/index.html">打开本站可视化</a>
+        <a class="button" href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">回到原文</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

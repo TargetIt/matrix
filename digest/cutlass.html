@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <title>CUTLASS Linear Algebra 中文导读</title>
+</head>
+<body>
+  <main class="shell">
+    <a class="back" href="index.html">← Digest 入口</a>
+    <header>
+      <div class="tag">Source 03 · 中文导读补充</div>
+      <h1>CUTLASS：把 SGEMM 优化经验做成模板</h1>
+      <p class="lead">NVIDIA 这篇文章讲的是高性能 GEMM 的“工程化抽象”。如果前两篇让你知道每一步优化怎么写，CUTLASS 文章则告诉你：这些套路可以被拆成层级和模板参数。</p>
+      <p>原始网页：<a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">CUTLASS: Fast Linear Algebra in CUDA C++</a></p>
+    </header>
+
+    <section class="section">
+      <h2>原文线索</h2>
+      <div class="source-note"><b>原文主题：</b>CUTLASS 是 CUDA C++ 模板集合，用来把高性能 GEMM 的组成部分抽象成可组合、可调参的模板类。</div>
+      <div class="source-note"><b>关键概念：</b>Thread Block Tile → Warp Tile → Thread Tile；数据从 Global Memory 到 Shared Memory，再到 Register File，最后进入 CUDA cores 计算。</div>
+      <div class="guide plain">CUTLASS 不是“又一种矩阵乘法公式”。它更像一套可调尺寸的积木：你决定每层 tile 多大、是否双缓存、输出最后要不要融合激活函数。</div>
+    </section>
+
+    <section class="section">
+      <h2>原文结构脉络</h2>
+      <div class="map">
+        <div class="map-row"><b>背景</b><span>GEMM 是深度学习中大量计算的核心，cuBLAS 和 cuDNN 都依赖高性能矩阵乘法策略。</span></div>
+        <div class="map-row"><b>层级结构</b><span>文章先解释 C tile、A/B tile、K 方向分块，再引出 thread block / warp / thread 的层级。</span></div>
+        <div class="map-row"><b>模板接口</b><span>用 block task、policy 和 epilogue 等类型，把 tile 大小、布局、写回操作表达成 C++ 模板。</span></div>
+        <div class="map-row"><b>扩展能力</b><span>通过 epilogue 融合 bias、ReLU 等后处理，减少额外 kernel 和 GMEM 往返。</span></div>
+        <div class="map-row"><b>性能结果</b><span>最后展示 CUTLASS 在 V100 上接近 cuBLAS 的性能，说明抽象没有明显牺牲效率。</span></div>
+      </div>
+      <div class="guide">CUTLASS 的文章读起来比前两篇抽象，因为它不再只讲“一个 kernel 怎么优化”，而是在讲“怎样把很多高性能 kernel 的共同结构抽出来”。把它放在最后读，会更容易。</div>
+    </section>
+
+    <section class="section">
+      <h2>为什么需要层级</h2>
+      <p>一个大矩阵无法直接全部放进高速内存，所以必须分层切块。每一层都回答一个不同尺度的问题。</p>
+      <div class="map">
+        <div class="map-row"><b>Thread Block Tile</b><span>一个 CUDA block 负责 C 的一块大矩形，并把对应 A/B tile 搬进 SMEM。</span></div>
+        <div class="map-row"><b>Warp Tile</b><span>block 内多个 warp 各自负责 C 子区域，减少互相干扰。</span></div>
+        <div class="map-row"><b>Thread Tile</b><span>单个线程负责更小的 C 子块，把 accumulator 放进寄存器。</span></div>
+        <div class="map-row"><b>Instruction Tile</b><span>最终映射到具体指令，比如 FMA、IDP4A 或 WMMA fragment。</span></div>
+      </div>
+      <div class="guide">这四层不是为了复杂而复杂。它们刚好对应 GPU 的硬件层级：block 对 SMEM，warp 对 SIMT 执行，thread 对寄存器，instruction 对 CUDA core 或 tensor core。</div>
+    </section>
+
+    <section class="section">
+      <h2>把 CUTLASS 参数翻译成人话</h2>
+      <p>原文里的 policy 参数看起来很模板化，但含义可以拆开理解。</p>
+      <pre>BlockItemsY / BlockItemsX: 一个 block 算多大的 C tile
+BlockItemsK: 每轮 K 方向搬多厚
+ThreadItemsY / ThreadItemsX: 一个线程算多大的 C 小块
+UseDoubleScratchTiles: Shared Memory 是否双缓存
+Epilogue: C 写回前还要做什么额外操作</pre>
+      <div class="guide">当你在手写 kernel 里调 BM、BN、BK、TM、TN，本质上就是在做 CUTLASS policy 的低配版。CUTLASS 把这些选择类型化、模板化，让你能系统地生成很多变体。</div>
+    </section>
+
+    <section class="section">
+      <h2>双缓存和 epilogue 是两个工程重点</h2>
+      <div class="mini-grid">
+        <div class="mini"><b>双缓存</b><p>一块 SMEM 给当前计算用，另一块 SMEM 预取下一轮数据。目标是让搬运和计算重叠。</p></div>
+        <div class="mini"><b>Epilogue</b><p>矩阵乘完以后，写回 C 之前顺手做缩放、bias、ReLU 等操作，减少额外 kernel 和 GMEM 往返。</p></div>
+      </div>
+      <div class="guide plain">双缓存像两个托盘：厨师炒第一盘时，助手已经把第二盘材料摆好。Epilogue 像出锅前顺手撒盐、加酱，不用再把菜端回厨房加工一次。</div>
+    </section>
+
+    <section class="section">
+      <h2>如何把这篇和前两篇连起来</h2>
+      <ol>
+        <li>Boehm 文章让你知道每一种优化为什么能快。</li>
+        <li>wangzyon 仓库让你看到这些优化在 CUDA kernel 里怎么落地。</li>
+        <li>CUTLASS 文章把这些经验整理成层级化模板，方便系统调参和复用。</li>
+      </ol>
+      <div class="guide">所以学习路线应该是：先手写理解，再看仓库验证，最后用 CUTLASS 的层级抽象整理脑子。反过来直接读 CUTLASS，很容易只看到一堆模板参数，却不知道它们为什么存在。</div>
+      <div class="actions">
+        <a class="button" href="../cutlass-hierarchy/index.html">打开本站可视化</a>
+        <a class="button" href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">回到原文</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

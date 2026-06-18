@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <title>SGEMM 三篇原始资料中文导读</title>
+</head>
+<body>
+  <main class="shell">
+    <a class="back" href="../index.html">← MATRIX 可视化入口</a>
+    <header>
+      <div class="tag">Digest · 中文二次导读</div>
+      <h1>三篇 SGEMM 原始资料，重新讲一遍</h1>
+      <p class="lead">这个目录不是替代原文，而是给原文加一层中文解释。每篇都保留原始链接和技术脉络；新增内容统一放在绿色或橙色的标记块里，帮助读者从“矩阵乘法是什么”一路读到“为什么 CUTLASS 要分这么多层”。</p>
+    </header>
+
+    <section class="section">
+      <h2>阅读顺序</h2>
+      <div class="sequence">
+        <div class="step"><span>1</span><b>先懂问题</b><p>SGEMM 就是在算很多行和列的点积。</p></div>
+        <div class="step"><span>2</span><b>再懂慢点</b><p>慢通常不是乘法慢，而是数据搬得太贵。</p></div>
+        <div class="step"><span>3</span><b>看优化阶梯</b><p>合并访存、SMEM、寄存器、向量化逐层上来。</p></div>
+        <div class="step"><span>4</span><b>看工程实现</b><p>wangzyon 仓库把这些优化写成可对照的 kernel。</p></div>
+        <div class="step"><span>5</span><b>看抽象框架</b><p>CUTLASS 把这些经验整理成可复用模板。</p></div>
+      </div>
+      <div class="guide plain">
+        如果把 GPU 想成一个大厨房：Global Memory 是远处的大仓库，Shared Memory 是灶台旁边的小货架，Registers 是厨师手里的碗。高性能 SGEMM 的核心，就是别让厨师每炒一下菜都跑回仓库拿一次盐。
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="tag">Source 01</div>
+        <h2>CUDA MMM Worklog</h2>
+        <p>Simon Böhm 的文章最适合当入门主线：从朴素 kernel 开始，一步步解释 coalescing、SMEM、tiling、向量化、warp tiling 为什么能提速。</p>
+        <div class="actions">
+          <a class="button" href="cuda-mmm.html">读中文导读</a>
+          <a class="button" href="https://siboehm.com/articles/22/CUDA-MMM" target="_blank" rel="noopener">打开原文</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="tag">Source 02</div>
+        <h2>NVIDIA_SGEMM_PRACTICE</h2>
+        <p>这个仓库更像实验代码清单：7 个 kernel 在 RTX 3090 上逐步提升，适合把“概念”对上“具体 CUDA 代码”。</p>
+        <div class="actions">
+          <a class="button" href="sgemm-practice.html">读中文导读</a>
+          <a class="button" href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">打开原文</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="tag">Source 03</div>
+        <h2>CUTLASS Linear Algebra</h2>
+        <p>NVIDIA 官方文章讲的是最终形态：把 GEMM 拆成 thread block tile、warp tile、thread tile，再用模板参数表达。</p>
+        <div class="actions">
+          <a class="button" href="cutlass.html">读中文导读</a>
+          <a class="button" href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">打开原文</a>
+        </div>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>标记规则</h2>
+      <div class="mini-grid">
+        <div class="mini"><b>原文线索</b><p>只保留来源、主题、关键参数和短线索，不复制第三方全文。</p></div>
+        <div class="mini"><b>导读补充</b><p>绿色块是新增中文解释，用来把原文里的专业概念拆成更容易理解的步骤。</p></div>
+        <div class="mini"><b>给非专业读者</b><p>橙色块用生活类比解释核心直觉，不要求先懂 CUDA。</p></div>
+        <div class="mini"><b>回到可视化</b><p>每篇都链接到现有交互页面，方便读完马上看数据流动。</p></div>
+      </div>
+      <div class="source-note"><b>版权边界：</b>这些页面不是把第三方网页全文搬到本仓库，而是保留原始链接、原文结构线索、关键参数和少量短摘式提示，再加入中文导读。需要逐字核对时，请通过每篇顶部的原文链接打开原始网页。</div>
+    </section>
+  </main>
+</body>
+</html>
