@@ -5,77 +5,142 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
-  <title>CUTLASS Linear Algebra 中文导读</title>
+  <title>CUTLASS Linear Algebra 中文长文导读</title>
 </head>
 <body>
   <main class="shell">
     <a class="back" href="index.html">← Digest 入口</a>
     <header>
-      <div class="tag">Source 03 · 中文导读补充</div>
-      <h1>CUTLASS：把 SGEMM 优化经验做成模板</h1>
-      <p class="lead">NVIDIA 这篇文章讲的是高性能 GEMM 的“工程化抽象”。如果前两篇让你知道每一步优化怎么写，CUTLASS 文章则告诉你：这些套路可以被拆成层级和模板参数。</p>
+      <div class="tag">Source 03 · 从手写 kernel 到框架抽象</div>
+      <h1>CUTLASS：把高性能 SGEMM 的经验，整理成一套可复用积木</h1>
+      <p class="lead">如果前两篇是在讲“我怎样一步步把一个 kernel 写快”，CUTLASS 这篇讲的是“能不能把这些经验做成一套通用模板”。它更抽象，所以我们先用生活例子和小矩阵把层级讲清楚，再回到原文的 thread block tile、warp tile、thread tile。</p>
       <p>原始网页：<a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">CUTLASS: Fast Linear Algebra in CUDA C++</a></p>
     </header>
 
     <section class="section">
       <h2>原文线索</h2>
-      <div class="source-note"><b>原文主题：</b>CUTLASS 是 CUDA C++ 模板集合，用来把高性能 GEMM 的组成部分抽象成可组合、可调参的模板类。</div>
-      <div class="source-note"><b>关键概念：</b>Thread Block Tile → Warp Tile → Thread Tile；数据从 Global Memory 到 Shared Memory，再到 Register File，最后进入 CUDA cores 计算。</div>
-      <div class="guide plain">CUTLASS 不是“又一种矩阵乘法公式”。它更像一套可调尺寸的积木：你决定每层 tile 多大、是否双缓存、输出最后要不要融合激活函数。</div>
+      <div class="source-note"><b>原文主题：</b>CUTLASS 是 CUDA C++ 模板集合，用来实现高性能 GEMM，并把 GEMM 的数据搬运、层级切块、写回后处理抽象成可组合组件。</div>
+      <div class="source-note"><b>关键概念：</b>Thread Block Tile → Warp Tile → Thread Tile → Instruction Tile。数据从 Global Memory 到 Shared Memory，再到 Register File，最后进入 CUDA cores 或 tensor cores。</div>
+      <div class="source-note"><b>原文结构：</b>先讲 GEMM 为什么重要，再讲 tile 化的 GEMM 层级，然后展示 block task policy、epilogue、双缓存和性能结果。</div>
+      <div class="guide plain">CUTLASS 不像前两篇那样从一个简单 kernel 写起。它像一个高级工具箱：你已经知道锤子、螺丝刀、扳手分别干什么，它现在要把这些工具做成一套标准化施工方案。</div>
     </section>
 
     <section class="section">
-      <h2>原文结构脉络</h2>
+      <h2>第一性原理：为什么要有“层级”</h2>
+      <p>矩阵乘法有三个维度：M、N、K。C 的每个元素都要沿 K 方向累加。问题是：真实矩阵很大，GPU 的快速存储很小。于是必须分层。</p>
+      <div class="formula">大问题不能一次塞进最快的地方，所以要切成小问题；小问题还要继续切，直到适合 block、warp、thread 和指令。</div>
+      <div class="guide">这就是 CUTLASS 的核心。它不是发明了新公式，而是把“把大矩阵切小、把数据搬近、让线程分工、最后写回”的过程标准化。</div>
+      <div class="guide plain">生活类比：一家全国连锁餐厅不可能让总部厨房给每桌做饭。它会分层：总部定菜谱，城市仓库供货，门店厨房备菜，厨师完成一道菜。每层负责不同尺度的问题。CUTLASS 的 GEMM 层级也是这样。</div>
+    </section>
+
+    <section class="section">
+      <h2>四层 tile：从大矩阵到一条指令</h2>
       <div class="map">
-        <div class="map-row"><b>背景</b><span>GEMM 是深度学习中大量计算的核心，cuBLAS 和 cuDNN 都依赖高性能矩阵乘法策略。</span></div>
-        <div class="map-row"><b>层级结构</b><span>文章先解释 C tile、A/B tile、K 方向分块，再引出 thread block / warp / thread 的层级。</span></div>
-        <div class="map-row"><b>模板接口</b><span>用 block task、policy 和 epilogue 等类型，把 tile 大小、布局、写回操作表达成 C++ 模板。</span></div>
-        <div class="map-row"><b>扩展能力</b><span>通过 epilogue 融合 bias、ReLU 等后处理，减少额外 kernel 和 GMEM 往返。</span></div>
-        <div class="map-row"><b>性能结果</b><span>最后展示 CUTLASS 在 V100 上接近 cuBLAS 的性能，说明抽象没有明显牺牲效率。</span></div>
+        <div class="map-row"><b>Thread Block Tile</b><span>一个 CUDA block 负责 C 的一块大矩形。它从 GMEM 取 A/B tile，并放到 SMEM。</span></div>
+        <div class="map-row"><b>Warp Tile</b><span>block 内的多个 warp 再分 C 的子区域。warp 是 GPU 执行调度的重要单位。</span></div>
+        <div class="map-row"><b>Thread Tile</b><span>一个线程负责更小的 C 子块，accumulator 放在寄存器。</span></div>
+        <div class="map-row"><b>Instruction Tile</b><span>最终映射成具体硬件指令，例如 scalar FMA、WMMA fragment 或其它 dot-product 指令。</span></div>
       </div>
-      <div class="guide">CUTLASS 的文章读起来比前两篇抽象，因为它不再只讲“一个 kernel 怎么优化”，而是在讲“怎样把很多高性能 kernel 的共同结构抽出来”。把它放在最后读，会更容易。</div>
+      <div class="guide">你可以把这四层理解成“谁负责哪块 C”。越外层，负责区域越大，主要考虑数据从 GMEM 到 SMEM；越内层，区域越小，主要考虑寄存器和指令效率。</div>
+      <div class="guide deep">如果写成伪代码，CUTLASS 的层级大致像这样：外层 block 决定 C 的大 tile，中层 warp 决定 C 的子 tile，内层 thread 维护自己的 accumulator，最里面的指令做 FMA 或 MMA。</div>
+      <pre>for block_tile_m, block_tile_n:
+    load A/B block tiles from GMEM to SMEM
+    for k_tile in K:
+        for warp_tile inside block:
+            for thread_tile inside warp:
+                for instruction step:
+                    accumulator += A_fragment * B_fragment
+    epilogue writes accumulator to C</pre>
     </section>
 
     <section class="section">
-      <h2>为什么需要层级</h2>
-      <p>一个大矩阵无法直接全部放进高速内存，所以必须分层切块。每一层都回答一个不同尺度的问题。</p>
-      <div class="map">
-        <div class="map-row"><b>Thread Block Tile</b><span>一个 CUDA block 负责 C 的一块大矩形，并把对应 A/B tile 搬进 SMEM。</span></div>
-        <div class="map-row"><b>Warp Tile</b><span>block 内多个 warp 各自负责 C 子区域，减少互相干扰。</span></div>
-        <div class="map-row"><b>Thread Tile</b><span>单个线程负责更小的 C 子块，把 accumulator 放进寄存器。</span></div>
-        <div class="map-row"><b>Instruction Tile</b><span>最终映射到具体指令，比如 FMA、IDP4A 或 WMMA fragment。</span></div>
+      <h2>用一个 8×8 的例子看层级</h2>
+      <p>假设 C 是 8×8，为了讲清楚，我们用非常小的 tile：</p>
+      <table class="matrix-table">
+        <thead><tr><th>层级</th><th>例子</th><th>它负责什么</th></tr></thead>
+        <tbody>
+          <tr><td>整个问题</td><td>C 是 8×8</td><td>一共有 64 个输出。</td></tr>
+          <tr><td>Block Tile</td><td>一个 block 负责 4×4</td><td>需要 4 行 A 和 4 列 B 的相关数据。</td></tr>
+          <tr><td>Warp Tile</td><td>一个 warp 负责 2×4</td><td>把 block 的 C 区域继续分给 warp。</td></tr>
+          <tr><td>Thread Tile</td><td>一个线程负责 1×2</td><td>线程维护 2 个 accumulator。</td></tr>
+          <tr><td>Instruction</td><td>一次 FMA 或 fragment MMA</td><td>执行最小粒度的乘加。</td></tr>
+        </tbody>
+      </table>
+      <div class="guide">真实 CUTLASS 的 tile 尺寸会大得多，也会根据数据类型和 GPU 架构调整。但第一性原理不变：把 C 切成层层小块，每层刚好匹配一个硬件组织单位。</div>
+    </section>
+
+    <section class="section">
+      <h2>Policy 参数不是魔法，是把切块写成类型</h2>
+      <p>原文里的 `block_task_policy` 看起来像模板黑魔法，但每个参数都有朴素含义：</p>
+      <pre>BlockItemsY / BlockItemsX: 一个 block 负责 C tile 的高和宽
+BlockItemsK: 每轮 K 方向的深度
+ThreadItemsY / ThreadItemsX: 一个线程负责 C 子块的高和宽
+UseDoubleScratchTiles: 是否用双缓冲 SMEM
+RasterStrategy: block 遍历输出矩阵的顺序</pre>
+      <div class="guide">手写 kernel 里你调 BM、BN、BK、TM、TN；CUTLASS 里你配置 policy。两者本质相同：用参数描述分工和数据搬运。区别是 CUTLASS 把这些参数放进模板系统，方便生成和复用很多 kernel 变体。</div>
+      <div class="guide deep">模板化还有一个好处：很多尺寸在编译期已知，编译器可以展开循环、分配固定数组、优化寄存器使用。高性能 GEMM 很依赖这种静态信息。</div>
+    </section>
+
+    <section class="section">
+      <h2>为什么 CUTLASS 要强调 Epilogue</h2>
+      <p>矩阵乘法本身算完后，很多深度学习场景不会直接结束。常见操作包括：</p>
+      <ul>
+        <li>乘上 alpha，再加 beta×C。</li>
+        <li>加 bias。</li>
+        <li>做 ReLU 或其它激活函数。</li>
+        <li>转换数据类型并写回。</li>
+      </ul>
+      <div class="guide">如果这些操作单独开一个 kernel，就要把 C 写到 GMEM，再从 GMEM 读回来处理，再写回。Epilogue 的目的就是在 GEMM 写回前顺手完成这些轻量后处理，减少额外内存往返。</div>
+      <div class="guide plain">这像菜出锅前顺手加葱花和调味。如果先把菜端到餐桌，再端回厨房加葱花，就多走一趟。</div>
+    </section>
+
+    <section class="section">
+      <h2>双缓存：让搬运和计算同时发生</h2>
+      <p>高性能 GEMM 不希望计算单元等数据。双缓存把 SMEM 切成两套 scratch tile：</p>
+      <pre>第 t 轮：
+  用 buffer 0 里的 A/B tile 做计算
+  同时把第 t+1 轮 A/B tile 预取到 buffer 1
+
+第 t+1 轮：
+  用 buffer 1 做计算
+  同时把第 t+2 轮预取到 buffer 0</pre>
+      <div class="guide">这就是流水线思想。不是让单次搬运更快，而是让搬运时间被计算时间遮住一部分。只要 pipeline 稳定，GPU 就更少停下来等 GMEM。</div>
+      <div class="guide plain">工厂流水线上，一个工人装配当前零件，另一个工人已经把下一批零件放到旁边。大家都不停手，产线就顺。</div>
+    </section>
+
+    <section class="section">
+      <h2>CUTLASS 和前两篇怎么接起来</h2>
+      <table class="matrix-table">
+        <thead><tr><th>你在前两篇学到的东西</th><th>在 CUTLASS 里的名字</th><th>为什么重要</th></tr></thead>
+        <tbody>
+          <tr><td>Block 负责 C 的一块</td><td>Thread Block Tile</td><td>决定 GMEM 到 SMEM 的大块搬运。</td></tr>
+          <tr><td>一个线程算多个 C</td><td>Thread Tile</td><td>决定寄存器 accumulator 数量和复用。</td></tr>
+          <tr><td>共享内存缓存</td><td>Scratch storage / SMEM tile</td><td>决定 block 内数据复用。</td></tr>
+          <tr><td>双缓存</td><td>UseDoubleScratchTiles</td><td>决定是否用流水线隐藏加载延迟。</td></tr>
+          <tr><td>写回前做缩放或激活</td><td>Epilogue functor</td><td>减少额外 kernel 和 GMEM 往返。</td></tr>
+        </tbody>
+      </table>
+      <div class="guide">所以 CUTLASS 并不是跳过手写优化。它是在手写优化已经被理解之后，把这些重复出现的结构抽出来。你越懂前两篇，越能读懂 CUTLASS。</div>
+    </section>
+
+    <section class="section">
+      <h2>一个公司级工程类比</h2>
+      <p>假设一家芯片公司要为很多客户提供矩阵乘法：有的客户矩阵很高，有的矩阵很宽，有的用 FP32，有的用 FP16，有的要求算完后接 ReLU。</p>
+      <div class="guide plain">如果每种需求都重新手写一个 kernel，就像每个订单都重新设计一条生产线，成本太高。CUTLASS 的做法是把生产线拆成标准模块：仓库搬运模块、车间缓存模块、工位分配模块、最后包装模块。客户换需求时，不是从零造，而是换一组模块参数。</div>
+      <div class="guide deep">这也是模板库的价值：不是让一个 kernel 适合所有场景，而是让生成很多专用 kernel 的成本变低。高性能往往来自“专用”，工程效率来自“模板化生成专用”。</div>
+    </section>
+
+    <section class="section">
+      <h2>最终总结：CUTLASS 到底解决什么问题</h2>
+      <ul class="summary-list">
+        <li><strong>它解决表达问题：</strong>把 GEMM 的层级结构用模板参数说清楚。</li>
+        <li><strong>它解决复用问题：</strong>把 GMEM、SMEM、Registers 的数据流组织成固定模式。</li>
+        <li><strong>它解决扩展问题：</strong>通过 policy 和 epilogue 适配不同矩阵形状、数据类型和后处理。</li>
+        <li><strong>它解决工程问题：</strong>让高性能 GEMM 不必每次从零手写。</li>
+      </ul>
+      <div class="guide checkpoint">
+        读完请自测：Thread Block Tile、Warp Tile、Thread Tile 分别对应哪个硬件层级？Epilogue 为什么能减少内存往返？双缓存为什么不是减少工作量，而是隐藏等待时间？
       </div>
-      <div class="guide">这四层不是为了复杂而复杂。它们刚好对应 GPU 的硬件层级：block 对 SMEM，warp 对 SIMT 执行，thread 对寄存器，instruction 对 CUDA core 或 tensor core。</div>
-    </section>
-
-    <section class="section">
-      <h2>把 CUTLASS 参数翻译成人话</h2>
-      <p>原文里的 policy 参数看起来很模板化，但含义可以拆开理解。</p>
-      <pre>BlockItemsY / BlockItemsX: 一个 block 算多大的 C tile
-BlockItemsK: 每轮 K 方向搬多厚
-ThreadItemsY / ThreadItemsX: 一个线程算多大的 C 小块
-UseDoubleScratchTiles: Shared Memory 是否双缓存
-Epilogue: C 写回前还要做什么额外操作</pre>
-      <div class="guide">当你在手写 kernel 里调 BM、BN、BK、TM、TN，本质上就是在做 CUTLASS policy 的低配版。CUTLASS 把这些选择类型化、模板化，让你能系统地生成很多变体。</div>
-    </section>
-
-    <section class="section">
-      <h2>双缓存和 epilogue 是两个工程重点</h2>
-      <div class="mini-grid">
-        <div class="mini"><b>双缓存</b><p>一块 SMEM 给当前计算用，另一块 SMEM 预取下一轮数据。目标是让搬运和计算重叠。</p></div>
-        <div class="mini"><b>Epilogue</b><p>矩阵乘完以后，写回 C 之前顺手做缩放、bias、ReLU 等操作，减少额外 kernel 和 GMEM 往返。</p></div>
-      </div>
-      <div class="guide plain">双缓存像两个托盘：厨师炒第一盘时，助手已经把第二盘材料摆好。Epilogue 像出锅前顺手撒盐、加酱，不用再把菜端回厨房加工一次。</div>
-    </section>
-
-    <section class="section">
-      <h2>如何把这篇和前两篇连起来</h2>
-      <ol>
-        <li>Boehm 文章让你知道每一种优化为什么能快。</li>
-        <li>wangzyon 仓库让你看到这些优化在 CUDA kernel 里怎么落地。</li>
-        <li>CUTLASS 文章把这些经验整理成层级化模板，方便系统调参和复用。</li>
-      </ol>
-      <div class="guide">所以学习路线应该是：先手写理解，再看仓库验证，最后用 CUTLASS 的层级抽象整理脑子。反过来直接读 CUTLASS，很容易只看到一堆模板参数，却不知道它们为什么存在。</div>
       <div class="actions">
         <a class="button" href="../cutlass-hierarchy/index.html">打开本站可视化</a>
         <a class="button" href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/" target="_blank" rel="noopener">回到原文</a>

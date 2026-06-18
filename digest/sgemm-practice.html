@@ -5,81 +5,177 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
-  <title>NVIDIA_SGEMM_PRACTICE 中文导读</title>
+  <title>NVIDIA_SGEMM_PRACTICE 中文长文导读</title>
 </head>
 <body>
   <main class="shell">
     <a class="back" href="index.html">← Digest 入口</a>
     <header>
-      <div class="tag">Source 02 · 中文导读补充</div>
-      <h1>七个 SGEMM kernel：每一步到底多做了什么</h1>
-      <p class="lead">这个 GitHub 仓库适合对照代码学习。它把 SGEMM 优化拆成七个版本，并给出 RTX 3090 上的性能阶梯。下面按“每一步解决什么问题”重新讲一遍。</p>
+      <div class="tag">Source 02 · 从代码执行过程讲清楚</div>
+      <h1>NVIDIA_SGEMM_PRACTICE：七个 kernel，每一步代码到底在搬什么、算什么</h1>
+      <p class="lead">这份仓库最适合拿来看代码路径。它不是只讲概念，而是把优化拆成多个 CUDA kernel。下面用“一个小矩阵、一段伪代码、一组生活类比”把每个 kernel 的意图讲清楚。</p>
       <p>原始仓库：<a href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">wangzyon/NVIDIA_SGEMM_PRACTICE</a></p>
     </header>
 
     <section class="section">
       <h2>原文线索</h2>
-      <div class="source-note"><b>原文主题：</b>Step-by-step optimization of CUDA SGEMM。仓库用多个 kernel 展示从朴素实现到 shared memory、thread tile、寄存器缓存、FLOAT4、double buffering 的演进。</div>
-      <div class="source-note"><b>关键数据：</b>本站现有可视化使用 README 中 RTX 3090、M=N=K=5120 的性能阶梯：从约 2.26 TFLOP/s 到约 13.63 TFLOP/s。</div>
-      <div class="guide">这篇材料更像“练功房”。Boehm 文章讲为什么，这个仓库更适合看“代码到底怎么写”。读它时不要只看最后最快的 kernel，要看每个版本比上一个版本多解决了哪一个瓶颈。</div>
+      <div class="source-note"><b>原文主题：</b>Step-by-step optimization of CUDA SGEMM。仓库用多个 CUDA kernel 展示朴素实现、共享内存、thread tile、寄存器缓存、FLOAT4、双缓存等优化。</div>
+      <div class="source-note"><b>关键数据：</b>本站可视化采用 README 中 RTX 3090、M=N=K=5120 的性能阶梯：从约 2.26 TFLOP/s 提升到约 13.63 TFLOP/s。</div>
+      <div class="source-note"><b>原文结构：</b>每个 kernel 对应一个代码版本，性能表负责说明收益，代码负责说明线程如何映射、数据如何搬运。</div>
+      <div class="guide">读这个仓库，最有效的方法不是盯着最终最快版本，而是比较相邻两个版本：这一步新增了什么变量？多了哪块共享内存？一个线程负责的输出是不是变多了？这些变化就是性能提升的来源。</div>
     </section>
 
     <section class="section">
-      <h2>原文结构脉络</h2>
-      <div class="map">
-        <div class="map-row"><b>README 主线</b><span>用一组可运行 CUDA kernel 展示 SGEMM 性能如何逐级上升。</span></div>
-        <div class="map-row"><b>性能表</b><span>每个 kernel 都有吞吐和相对 cuBLAS 的比例，方便看优化收益。</span></div>
-        <div class="map-row"><b>代码对照</b><span>每个版本保留核心 CUDA 代码，便于直接查看线程索引、tile 形状和访存语句。</span></div>
-        <div class="map-row"><b>工程重点</b><span>共享内存、寄存器缓存、FLOAT4、双缓冲都不是概念，而是对应到具体代码路径。</span></div>
+      <h2>先用一个数字例子，把“线程负责 C 元素”讲透</h2>
+      <p>先看一个 2×2 的具体乘法。假设：</p>
+      <pre>A = [[1, 2],
+     [3, 4]]
+
+B = [[5, 6],
+     [7, 8]]
+
+C[0,1] = A[0,0]×B[0,1] + A[0,1]×B[1,1]
+       = 1×6 + 2×8
+       = 22</pre>
+      <div class="guide">如果一个线程负责 C[0,1]，它就要读 A 的第 0 行 `[1,2]`，再读 B 的第 1 列 `[6,8]`，然后做两次乘加。真实 SGEMM 只是把这个小例子放大到成千上万个线程、成千上万个元素。</div>
+      <p>假设 C 是 4×4。朴素版本里，一个线程负责一个 C 元素。threadIdx.x 可以映射成二维坐标：</p>
+      <pre>tx = threadIdx.x % BN
+ty = threadIdx.x / BN</pre>
+      <p>如果 BN=4，那么：</p>
+      <table class="matrix-table">
+        <thead><tr><th>threadIdx.x</th><th>ty</th><th>tx</th><th>负责输出</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>0</td><td>0</td><td>C[0,0]</td></tr>
+          <tr><td>1</td><td>0</td><td>1</td><td>C[0,1]</td></tr>
+          <tr><td>4</td><td>1</td><td>0</td><td>C[1,0]</td></tr>
+          <tr><td>15</td><td>3</td><td>3</td><td>C[3,3]</td></tr>
+        </tbody>
+      </table>
+      <div class="guide">这就是代码里的第一条主线：线程编号不是随便用的，它会变成矩阵里的行列坐标。后面所有 BM、BN、TM、TN 参数，本质都在改变“一个线程负责多少输出，以及这些输出在 C tile 的什么位置”。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 1：朴素实现，最容易懂，也最容易慢</h2>
+      <p>一个线程负责一个 C 元素。例如 thread 1 负责 C[0,1]。它会读取 A 的第 0 行和 B 的第 1 列：</p>
+      <pre>tmp = 0
+for k = 0..K-1:
+    tmp += A[0,k] * B[k,1]
+C[0,1] = tmp</pre>
+      <div class="guide plain">这像一个学生负责算表格里的一个格子。为了算这个格子，他把横向的一整排资料和竖向的一整列资料拿出来，对应相乘再相加。方法完全正确，但每个学生都自己去拿资料，重复很多。</div>
+      <div class="guide deep">可视化里浅红色的一行 A 和一列 B，表示这个线程完整 K-loop 会扫过的范围；深红色表示当前这一小步正在读取的 A[row,k] 和 B[k,col]。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 2：Shared Memory，大家合伙搬货</h2>
+      <p>Kernel 2 开始让一个 block 的线程协作。每个线程从 GMEM 搬一点 A/B tile 到 Shared Memory，然后所有线程从 SMEM 里读。</p>
+      <pre>As[ty, tx] = A[global_row, global_k]
+Bs[ty, tx] = B[global_k, global_col]
+__syncthreads()
+
+for i in 0..BK-1:
+    tmp += As[ty, i] * Bs[i, tx]</pre>
+      <div class="guide">这一步解决的是“重复从 GMEM 取同样数据”的问题。A/B tile 先被放到 SMEM，block 内线程共享使用。每个线程仍然可以只负责一个 C，但它读 A/B 的地点变近了。</div>
+      <div class="guide plain">以前每个人都跑仓库；现在每个人分工拿一点货到桌上，大家等桌子摆满，再一起从桌上拿。`__syncthreads()` 就是“等大家都摆完再开工”。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 3：一维 Thread Tile，一个线程算多个 C</h2>
+      <p>Kernel 3 让一个线程沿 M 方向负责多个输出，比如 TM=4、TN=1，thread 可能负责：</p>
+      <pre>C[0, col]
+C[1, col]
+C[2, col]
+C[3, col]</pre>
+      <p>这样同一个 B 值可以复用 4 次：</p>
+      <pre>b = Bs[k, col]
+acc0 += As[row+0, k] * b
+acc1 += As[row+1, k] * b
+acc2 += As[row+2, k] * b
+acc3 += As[row+3, k] * b</pre>
+      <div class="guide">关键变化是：线程不再只维护一个 accumulator，而是维护多个 accumulator。一个从 B 读来的值，能同时服务多个 C 输出。数据搬一次，算得更多。</div>
+      <div class="guide plain">像厨师拿到一勺酱，不只给一碗面加，而是给四碗面都加。酱只拿一次，产出变多。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 4：二维 Thread Tile，开始像小型矩阵乘法</h2>
+      <p>Kernel 4 让一个线程负责 TM×TN 个输出，比如 4×4，一共 16 个 C。它会维护一个小的 accumulator 矩阵：</p>
+      <pre>acc[4][4] = 0
+for k in 0..BK-1:
+    a_frag[4] = A 的 4 个行方向值
+    b_frag[4] = B 的 4 个列方向值
+    for m in 0..3:
+        for n in 0..3:
+            acc[m][n] += a_frag[m] * b_frag[n]</pre>
+      <div class="guide">这一步非常重要。一个线程手里同时有 A 的一小列片段和 B 的一小行片段，然后做 outer product。4 个 A 值和 4 个 B 值组合出 16 次乘加。复用率显著提高。</div>
+      <div class="guide deep">这就是为什么 TM/TN 不是装饰参数。TM/TN 越大，一个线程负责的 C 子块越大，寄存器复用越强；但寄存器占用也越高，太大可能降低 occupancy。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 5：寄存器缓存，把最热的数据放到手边</h2>
+      <p>SMEM 已经比 GMEM 快，但 SMEM 也不是免费。Kernel 5 把当前 K 步要用的 A/B fragment 先读到寄存器。</p>
+      <pre>for k in 0..BK-1:
+    a_frag[m] = As[row+m, k]
+    b_frag[n] = Bs[k, col+n]
+    acc[m][n] += a_frag[m] * b_frag[n]</pre>
+      <div class="guide">Registers 是线程私有且最快的存储。把 a_frag 和 b_frag 放到寄存器后，内层循环可以少访问 SMEM，多用寄存器完成乘加。</div>
+      <div class="guide plain">SMEM 像灶台旁的货架，寄存器像厨师已经抓在手里的调料。最常用的一小撮东西，当然放手里最快。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 6：FLOAT4，一次搬四个连续数字</h2>
+      <p>如果内存地址连续且对齐，可以用 `float4` 一次读取 4 个 FP32。它的直觉是减少访存指令和事务数量。</p>
+      <pre>普通读取：
+load A[x]
+load A[x+1]
+load A[x+2]
+load A[x+3]
+
+FLOAT4：
+load float4(A[x..x+3])</pre>
+      <div class="guide">FLOAT4 的收益建立在“数据连续、对齐、马上会用”上。它不是为了让数学变少，而是让搬运动作更粗粒度、更高效。</div>
+      <div class="guide plain">像买鸡蛋。一次拿一个鸡蛋要跑四趟，一次拿一盒四个只跑一趟。但前提是你确实要这四个，而且盒子放得整齐。</div>
+    </section>
+
+    <section class="section">
+      <h2>Kernel 7：双缓存，边做饭边备下一盘菜</h2>
+      <p>双缓存的目标是把“搬下一块 tile”和“计算当前 tile”重叠起来。通常会准备两份 SMEM buffer：</p>
+      <pre>buffer 0: 当前正在计算的数据
+buffer 1: 正在预取的下一轮数据
+
+下一轮交换：
+buffer 1 变成当前计算
+buffer 0 用来预取再下一轮</pre>
+      <div class="guide">如果计算当前 tile 时，硬件同时在准备下一 tile，那么 GMEM 延迟就能被部分隐藏。这样 pipeline 更满，计算单元更不容易等数据。</div>
+      <div class="guide plain">厨师炒第一盘时，助手已经把第二盘菜洗好切好。等第一盘出锅，第二盘马上下锅，中间不用停下来等备菜。</div>
+    </section>
+
+    <section class="section">
+      <h2>把 BM、BN、BK、TM、TN 讲成人话</h2>
+      <table class="matrix-table">
+        <thead><tr><th>参数</th><th>第一性原理含义</th><th>调大可能带来什么</th><th>调太大有什么风险</th></tr></thead>
+        <tbody>
+          <tr><td>BM</td><td>C tile 的行数</td><td>A 数据复用更多</td><td>SMEM/寄存器压力上升</td></tr>
+          <tr><td>BN</td><td>C tile 的列数</td><td>B 数据复用更多</td><td>线程组织更复杂</td></tr>
+          <tr><td>BK</td><td>每轮 K 方向深度</td><td>每轮计算更多</td><td>SMEM 占用增大</td></tr>
+          <tr><td>TM</td><td>单线程负责的 C 行数</td><td>一个 B 值复用更多</td><td>accumulator 变多</td></tr>
+          <tr><td>TN</td><td>单线程负责的 C 列数</td><td>一个 A 值复用更多</td><td>寄存器占用变高</td></tr>
+        </tbody>
+      </table>
+      <div class="guide">这些参数没有绝对最优。它们是在“复用更多”和“资源够不够”之间找平衡。高性能 SGEMM 不是把每个参数都调大，而是让它们共同适配某一代 GPU。</div>
+    </section>
+
+    <section class="section">
+      <h2>最终总结：七个 kernel 的学习价值</h2>
+      <ul class="summary-list">
+        <li><strong>Kernel 1</strong> 让你看懂一个线程如何从 A 行和 B 列算 C。</li>
+        <li><strong>Kernel 2</strong> 让你看懂 block 内线程如何共享 A/B tile。</li>
+        <li><strong>Kernel 3/4</strong> 让你看懂 thread tile 如何提高寄存器级复用。</li>
+        <li><strong>Kernel 5</strong> 让你看懂为什么 fragment 要进寄存器。</li>
+        <li><strong>Kernel 6</strong> 让你看懂连续对齐访问为什么适合向量化。</li>
+        <li><strong>Kernel 7</strong> 让你看懂为什么高性能 kernel 要做流水线。</li>
+      </ul>
+      <div class="guide checkpoint">
+        读完请自测：如果 TM=4、TN=4，一个线程负责几个 C 输出？如果 BK 变大，K-loop 轮数会怎么变？如果 FLOAT4 读取的数据不连续，还能得到同样收益吗？
       </div>
-      <div class="guide">读这个仓库时，最有效的方法是“先看性能表，再看相邻两个 kernel 的 diff”。只看最终版本会很难；相邻版本对比能清楚看到每次优化只解决一个主要矛盾。</div>
-    </section>
-
-    <section class="section">
-      <h2>七级优化阶梯</h2>
-      <div class="map">
-        <div class="map-row"><b>Kernel 1</b><span>朴素实现：每个线程算一个 C 元素，直接从 GMEM 读 A 行和 B 列。</span></div>
-        <div class="map-row"><b>Kernel 2</b><span>共享内存缓存：block 内线程协作把 A/B tile 搬到 SMEM。</span></div>
-        <div class="map-row"><b>Kernel 3</b><span>一维 thread tile：一个线程沿 M 方向算多个 C，复用同一个 B 值。</span></div>
-        <div class="map-row"><b>Kernel 4</b><span>二维 thread tile：一个线程算 TM×TN 的 C 小块，形成小 outer product。</span></div>
-        <div class="map-row"><b>Kernel 5</b><span>寄存器缓存：把当前 K 切片的 A/B fragment 先读入寄存器。</span></div>
-        <div class="map-row"><b>Kernel 6</b><span>FLOAT4 向量访存：一次搬 4 个 FP32，减少内存事务。</span></div>
-        <div class="map-row"><b>Kernel 7</b><span>双缓存预取：计算当前 tile 的同时准备下一批 tile，隐藏搬运延迟。</span></div>
-      </div>
-      <div class="guide plain">如果继续用厨房类比：Kernel 1 是每炒一口菜就去仓库；Kernel 2 是先把一箱菜搬到灶台边；Kernel 4 是一个厨师一次处理一小盘组合菜；Kernel 7 是这盘还在炒，下一盘已经备好了。</div>
-    </section>
-
-    <section class="section">
-      <h2>为什么参数 BM、BN、BK、TM、TN 很重要</h2>
-      <p>这些参数决定了切块大小和线程分工。它们不是随便调的数字，而是在容量、并行度、访存连续性之间做平衡。</p>
-      <div class="mini-grid">
-        <div class="mini"><b>BM / BN</b><p>一个 block 负责的 C tile 高度和宽度。越大，复用潜力越大，但资源压力也越大。</p></div>
-        <div class="mini"><b>BK</b><p>每轮 K-loop 搬多少深度的 A/B tile。BK 影响 SMEM 占用和循环次数。</p></div>
-        <div class="mini"><b>TM / TN</b><p>一个线程负责的 C 子块大小。越大，寄存器复用越多，但寄存器占用也会上升。</p></div>
-        <div class="mini"><b>thread_num</b><p>由 `(BM/TM) × (BN/TN)` 推导，必须和线程分工匹配。</p></div>
-      </div>
-      <div class="guide">看可视化时，建议先固定 M=N=K=16，只调 BM/BN/BK/TM/TN。你会看到：参数改变的不是数学结果，而是“谁搬数据、谁算哪块、数据在哪里复用”。</div>
-    </section>
-
-    <section class="section">
-      <h2>读代码时抓住三条线</h2>
-      <div class="mini-grid">
-        <div class="mini"><b>数据搬运线</b><p>GMEM → SMEM → Register。问自己：这一步数据从哪里来，到哪里去？</p></div>
-        <div class="mini"><b>线程负责线</b><p>threadIdx.x 映射到 C 的哪一行哪一列？一个线程负责几个输出？</p></div>
-        <div class="mini"><b>K-loop 线</b><p>每一轮 K tile 会贡献一部分累加，所有轮加完才是最终 C。</p></div>
-        <div class="mini"><b>同步线</b><p>什么时候必须 `__syncthreads()`？一般是共享数据写完再读、读完再覆盖。</p></div>
-      </div>
-      <div class="guide">这也是我们可视化页面用颜色分层的原因：浅红表示当前线程完整会扫过的 GMEM 范围，深红表示当前步骤正在读的 GMEM 元素，蓝色表示 SMEM，绿色表示线程负责的输出。</div>
-    </section>
-
-    <section class="section">
-      <h2>这篇材料最适合怎么学</h2>
-      <ol>
-        <li>先打开可视化，选 Kernel 1，看一个线程怎么用 A 行和 B 列算 C。</li>
-        <li>切到 Kernel 2，看 A/B tile 如何进入 Shared Memory。</li>
-        <li>切到 Kernel 4/5，看一个线程不再只算一个 C，而是算一块 C。</li>
-        <li>最后看 Kernel 6/7，理解向量化和双缓存属于“进一步压榨数据搬运”的技巧。</li>
-      </ol>
       <div class="actions">
         <a class="button" href="../sgemm-practice/index.html">打开本站可视化</a>
         <a class="button" href="https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE" target="_blank" rel="noopener">回到原始仓库</a>
