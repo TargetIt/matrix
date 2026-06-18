@@ -21,7 +21,7 @@ Thread grid per warp: 2x2 threads (warp tile 4x4, thread tile 2x2)
 """
 import numpy as np
 
-np.random.seed(777)
+np.random.seed(42)
 np.set_printoptions(precision=6, suppress=True, linewidth=200)
 
 # ──────────────────────────────────────────────

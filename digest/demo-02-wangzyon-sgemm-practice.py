@@ -2,7 +2,7 @@
 """
 CUDA SGEMM 优化验证脚本
 基于 wangzyon/NVIDIA_SGEMM_PRACTICE
-演示问题规模: M=N=K=16, seed=2024, float32
+演示问题规模: M=N=K=16, seed=42, float32
 
 每个 kernel 阶段:
   K1 Naive: blockDim=(4,4), gridDim=(4,4,1)
@@ -16,7 +16,7 @@ CUDA SGEMM 优化验证脚本
 
 import numpy as np
 
-np.random.seed(2024)
+np.random.seed(42)
 
 A = np.random.randn(16, 16).astype(np.float32)
 B = np.random.randn(16, 16).astype(np.float32)
@@ -24,7 +24,7 @@ C_ref = A @ B
 
 print("=" * 70)
 print("CUDA SGEMM 优化验证")
-print("问题规模: M=N=K=16, seed=2024, dtype=float32")
+print("问题规模: M=N=K=16, seed=42, dtype=float32")
 print("=" * 70)
 
 # ---- 矩阵 A ----
