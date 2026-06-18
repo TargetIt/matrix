@@ -389,8 +389,8 @@
         <div class="memory-flex">
           <div class="matrix-wrap"><div class="matrix-title"><b>Global A</b><small>row-major</small></div><div id="matrixA" class="matrix"></div></div>
           <div class="matrix-wrap"><div class="matrix-title"><b>Global B</b><small>row-major</small></div><div id="matrixB" class="matrix"></div></div>
-          <div class="matrix-wrap"><div class="matrix-title"><b>Shared As</b><small id="asShape"></small></div><div id="matrixAs" class="matrix"></div></div>
-          <div class="matrix-wrap"><div class="matrix-title"><b>Shared Bs</b><small id="bsShape"></small></div><div id="matrixBs" class="matrix"></div></div>
+          <div class="matrix-wrap" id="wrapAs"><div class="matrix-title"><b>Shared As</b><small id="asShape"></small></div><div id="matrixAs" class="matrix"></div></div>
+          <div class="matrix-wrap" id="wrapBs"><div class="matrix-title"><b>Shared Bs</b><small id="bsShape"></small></div><div id="matrixBs" class="matrix"></div></div>
           <div class="matrix-wrap" id="wrapC"><div class="matrix-title"><b>Global C</b><small>最终写回</small></div><div id="matrixC" class="matrix"></div></div>
         </div>
       </div>
@@ -829,7 +829,7 @@ function renderRegisters() {
   if (s.id === 'compute') {
     const acc = c.owned.slice(0, 12).map(([r, col]) => {
       let sum = 0;
-      const kEnd = (s.kIter || 1) * v.BK;
+      const kEnd = (s.kIter + 1) * v.BK;  // cumulative: sum all contributions up through current K-iteration
       const kStart = Math.max(0, kEnd - v.BK);
       for (let k = kStart; k < Math.min(kEnd, N); k++) sum += (state.A[r]?.[k] || 0) * (state.B[k]?.[col] || 0);
       return { label: `accum[${r},${col}]`, value: sum.toFixed(1) };
@@ -1070,24 +1070,28 @@ function renderAll() {
     sets: { owner: sets.owner, reg: sets.reg }
   });
 
-  // Memory matrices
-  $('asShape').textContent = k.badges.float4 ? `${v.BK}×${v.BM} (转置存)` : `${v.BM}×${v.BK}`;
-  $('bsShape').textContent = `${v.BK}×${v.BN}`;
+  // Memory matrices — kernel_1 has no SMEM, hide those panels
+  const hasSmem = k.badges.smem;
+  $('wrapAs').style.display = hasSmem ? '' : 'none';
+  $('wrapBs').style.display = hasSmem ? '' : 'none';
+  if (hasSmem) {
+    $('asShape').textContent = k.badges.float4 ? `${v.BK}×${v.BM} (转置存)` : `${v.BM}×${v.BK}`;
+    $('bsShape').textContent = `${v.BK}×${v.BN}`;
+    const as = kernel().badges.float4 ? tileValues(state.A, v.BK, v.BM, true) : tileValues(state.A, v.BM, v.BK);
+    const bs = tileValues(state.B, v.BK, v.BN);
+    renderMatrix($('matrixAs'), as, {
+      sets: { write: sets.As, read: sets.As }, readClass: 'smem-read', writeClass: 'smem-write'
+    });
+    renderMatrix($('matrixBs'), bs, {
+      sets: { write: sets.Bs, read: sets.Bs }, readClass: 'smem-read', writeClass: 'smem-write'
+    });
+  }
 
   renderMatrix($('matrixA'), state.A, {
     sets: { tile: sets.tileA, read: sets.A, vector: sets.vectorA }, readClass: 'gmem-read'
   });
   renderMatrix($('matrixB'), state.B, {
     sets: { tile: sets.tileB, read: sets.B, vector: sets.vectorB }, readClass: 'gmem-read'
-  });
-
-  const as = kernel().badges.float4 ? tileValues(state.A, v.BK, v.BM, true) : tileValues(state.A, v.BM, v.BK);
-  const bs = tileValues(state.B, v.BK, v.BN);
-  renderMatrix($('matrixAs'), as, {
-    sets: { write: sets.As, read: sets.As }, readClass: 'smem-read', writeClass: 'smem-write'
-  });
-  renderMatrix($('matrixBs'), bs, {
-    sets: { write: sets.Bs, read: sets.Bs }, readClass: 'smem-read', writeClass: 'smem-write'
   });
 
   // C matrix visibility: only show during writeback
@@ -1123,9 +1127,11 @@ function selectKernel(index) {
 
 function step(delta) {
   const max = state.currentStages.length;
-  let next = state.stepIndex + delta;
-  if (next < 0) next = max - 1;
-  if (next >= max) next = 0;
+  // Skip divider stages — they're visual markers, not navigable steps
+  let next = state.stepIndex;
+  do {
+    next = (next + delta + max) % max;
+  } while (state.currentStages[next]?.divider && next !== state.stepIndex);
   state.stepIndex = next;
   renderAll();
 }
@@ -1141,7 +1147,7 @@ renderThreads();
 renderAll();
 
 // ── 事件绑定 ──
-$('threadSelect').addEventListener('change', event => { state.thread = Number(event.target.value); renderAll(); });
+$('threadSelect').addEventListener('change', event => { state.thread = Number(event.target.value); /* preserve stepIndex */ renderAll(); });
 $('nextStep').addEventListener('click', () => step(1));
 $('prevStep').addEventListener('click', () => step(-1));
 $('resetData').addEventListener('click', () => { state.seed += 17; makeData(); renderAll(); });
