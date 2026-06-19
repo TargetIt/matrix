@@ -2,8 +2,8 @@
 """
 CUDA SGEMM Optimization Verification Script
 Based on: https://siboehm.com/articles/22/CUDA-MMM
-Demo: M=N=K=16, seed=1, randint(-5, 5), float32
-Integer matrices for exact reproducibility.
+Demo: M=N=K=16, seed=1, randint(0, 10), float32
+0-9 整数矩阵 for exact reproducibility.
 
 This script simulates each kernel stage and verifies against numpy ground truth.
 """
@@ -14,29 +14,29 @@ np.random.seed(1)
 np.set_printoptions(linewidth=220, precision=6, suppress=True, threshold=10000)
 
 # ============================================================
-# 1. Generate demo matrices (整数矩阵, seed=1)
+# 1. Generate demo matrices (0-9 整数矩阵, seed=1)
 # ============================================================
 M, N, K = 16, 16, 16
-A = np.random.randint(-5, 6, (M, K)).astype(np.float32)
-B = np.random.randint(-5, 6, (K, N)).astype(np.float32)
+A = np.random.randint(0, 10, (M, K)).astype(np.float32)
+B = np.random.randint(0, 10, (K, N)).astype(np.float32)
 C_ref = A @ B  # Ground truth
 
 print("=" * 80)
 print("CUDA SGEMM OPTIMIZATION VERIFICATION")
 print(f"Problem size: M={M}, N={N}, K={K}")
 print(f"Data type: float32")
-print(f"Random seed: 1, randint(-5, 6)")
+print(f"Random seed: 1, randint(0, 10)")
 print("=" * 80)
 
 print("\n" + "=" * 80)
-print("MATRIX A (16x16, float32, seed=1, randint -5..5)")
+print("MATRIX A (16x16, float32, seed=1, randint 0..9)")
 print("=" * 80)
 for i in range(M):
     row_str = "  ".join(f"{int(A[i, j]):4d}" for j in range(K))
     print(f"Row {i:2d}: [{row_str}]")
 
 print("\n" + "=" * 80)
-print("MATRIX B (16x16, float32, seed=1, randint -5..5)")
+print("MATRIX B (16x16, float32, seed=1, randint 0..9)")
 print("=" * 80)
 for i in range(K):
     row_str = "  ".join(f"{int(B[i, j]):4d}" for j in range(N))
@@ -245,7 +245,7 @@ for tile in range(4):
     bk_start = tile * 4
     part = sum(A[0, bk_start + k] * B[bk_start + k, 0] for k in range(4))
     total += part
-    print(f"    Tile {tile} (bk_start={bk_start}): As[0,{bk_start}:{bk_start+4}] · Bs[{bk_start}:{bk_start+4},0] = {int(part):6d}")
+    print(f"    Tile {tile} (bk_start={bk_start}): As[0,{bk_start}:{bk_start+4}] . Bs[{bk_start}:{bk_start+4},0] = {int(part):6d}")
 print(f"    Total C[0,0] = {int(total):6d}")
 
 # Show all 4 K-tile partial sums for C[1,0]
@@ -611,10 +611,6 @@ k3_gmem_writes = M * N * 4
 k3_smem_reads = (M // 4) * (N // 4) * (K // 4) * 4 * 4 * 4 * 2 * 4  # each thread reads from SMEM for dot products
 # Simpler: SMEM traffic = blocks * k_tiles * (BM*BK + BK*BN) floats * 4B for load + BM*BN threads * BK reads per tile
 k3_smem_loads = 16 * 4 * 32 * 4  # loading As+Bs into SMEM: 16 blocks * 4 tiles * 32 floats * 4B = 8192B
-k3_smem_thread_reads = 16 * 4 * 4 * 4 * 4 * 4  # blocks * ktiles * threads_per_block * BK * 4B? no, more complex
-# Let's just compute: each thread reads BK*2 floats from SMEM per k-tile, each float is 4B
-# BM*BN = 16 threads per block, each reads BK*2 = 8 floats from SMEM per k-tile = 128 floats per block per tile
-# Total: 16 blocks * 4 tiles * 128 floats * 4B = 32768B SMEM reads (thread reads)
 k3_smem_thread_reads = 16 * 4 * 4 * 4 * 4 * 2 * 4  # blocks * tiles * BM * BN * BK * (reads per inner loop) * 4B
 # Hmm, this is getting complicated. Let me simplify: SMEM reads per thread per tile = BK*2 floats for 2 FMAs
 # 16 threads * 4 tiles * 16 blocks * BK * 2 * 4B

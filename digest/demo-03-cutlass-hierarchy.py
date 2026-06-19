@@ -1,6 +1,6 @@
 """
-CUTLASS Hierarchical GEMM Simulation (整数矩阵, seed=1, -5..5)
-==============================================================
+CUTLASS Hierarchical GEMM Simulation (0-9 整数矩阵, seed=1)
+============================================================
 Verification script for 03-cutlass-hierarchy.md
 
 Parameters:
@@ -25,6 +25,8 @@ Warp grid per block: 2x2 warps (block tile 8x8, warp tile 4x4)
 Thread grid per warp: 2x2 threads (warp tile 4x4, thread tile 2x2)
 """
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 np.random.seed(1)
 np.set_printoptions(precision=0, suppress=True, linewidth=200)
@@ -33,8 +35,8 @@ np.set_printoptions(precision=0, suppress=True, linewidth=200)
 # 1. Problem definition
 # ──────────────────────────────────────────────
 M, N, K = 16, 16, 16
-A = np.random.randint(-5, 6, (M, K)).astype(np.float32)
-B = np.random.randint(-5, 6, (K, N)).astype(np.float32)
+A = np.random.randint(0, 10, (M, K)).astype(np.float32)
+B = np.random.randint(0, 10, (K, N)).astype(np.float32)
 C_expected = A @ B
 
 # ──────────────────────────────────────────────
@@ -62,10 +64,10 @@ num_thr_n   = WN // TN # 2 threads per warp (N direction)
 threads_per_block = num_warp_m * num_warp_n * num_thr_m * num_thr_n
 
 print("=" * 72)
-print("CUTLASS Hierarchical GEMM — Verification Script (整数矩阵, seed=1)")
+print("CUTLASS Hierarchical GEMM — Verification Script (0-9 整数矩阵, seed=1)")
 print("=" * 72)
 print(f"\nProblem:  M={M}, N={N}, K={K}")
-print(f"数据类型: int32 randint(-5,6) → float32")
+print(f"数据类型: int32 randint(0,10) → float32")
 print(f"随机种子: 1")
 print(f"Block Tile:  BM={BM}, BN={BN}, BK={BK}")
 print(f"Warp Tile:   WM={WM}, WN={WN}")
@@ -286,7 +288,7 @@ shared memory arrays (buffer A, buffer B).
 # 7. Epilogue — fusing bias + ReLU
 # ──────────────────────────────────────────────
 print("=" * 72)
-print("EPILOGUE — Fusing operations after matmul (整数矩阵)")
+print("EPILOGUE — Fusing operations after matmul (0-9 整数矩阵)")
 print("=" * 72)
 
 bias = np.array([1, 2, 3, 4, 5, 6, 7, 8,
