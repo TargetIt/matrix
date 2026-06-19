@@ -102,6 +102,17 @@
 
 每个线程执行： `C[row][col] = Σ(k=0..15) A[row][k] × B[k][col]`
 
+#### 2.1.5 层次树
+
+```
+矩阵 C (16×16, GMEM)
+└── Grid: 4×4 = 16 blocks (gridDim=(4,4,1))
+    └── Block: 16 threads (blockDim=(4,4))
+        └── Thread: 1 element of C
+            └── 16 次迭代 K: 每次 2×GMEM读 + 1×FMA
+            总 GMEM 流量: (4096+4096+256)×4 = 33,792 bytes
+```
+
 ### 2.2 访存分析 (GMEM vs SMEM)
 
 **从第一性原理角度**：SGEMM 是典型的 memory-bound 问题。对于 M=N=K=N 的方阵：
@@ -169,6 +180,19 @@ C[0,0] = A[0,0]×B[0,0] + A[0,1]×B[1,0] + ... + A[0,15]×B[15,0]
 1. Block 协作从 **全局内存 (GMEM)** 加载 4×4 tile 的 A 和 B 到 **共享内存 (SMEM)**（只从 GMEM 读一次）
 2. `__syncthreads()` 确保所有数据就绪
 3. 16 个线程从 **共享内存 (SMEM)** 读取数据，计算偏微和
+
+#### 3.1.5 层次树
+
+```
+矩阵 C (16×16)
+└── Grid: 4×4 = 16 blocks
+    └── Block: BM=4, BN=4, BK=4 (blockDim=(4,4))
+        ├── [GMEM→SMEM] As[4×4] + Bs[4×4] (32 floats = 128 bytes) per K-step
+        ├── K 迭代: 16/BK=4 slides along K dimension
+        ├── __syncthreads() 确保 SMEM 就绪
+        └── Thread: 1 element, 从 SMEM 做 BK=4 次内积
+            └── 每个 block 16 线程协作加载 1 次, 共享 SMEM
+```
 
 ### 3.2 Tile 滑动模式
 
@@ -339,6 +363,19 @@ AI (GMEM) = 8192 / 9216 ≈ 0.8889 FLOPs/byte  (K1 的 3.67 倍)
 **线程数:** 2×2×8×2 = 64 线程（vs K2 的 256）
 **每线程工作量:** 4 个 C 元素（vs K1/K2 的 1 个）
 
+#### 4.1.5 层次树
+
+```
+矩阵 C (16×16)
+└── Grid: 2×2 = 4 blocks (16/BM=16/8=2)
+    └── Block: BM=8, BN=8, BK=4 (blockDim.x=8, blockDim.y=2)
+        ├── [GMEM→SMEM] As[8×4] + Bs[4×8] (每步 64 floats, 256 bytes)
+        ├── 线程数: 8×2=16  (vs K2的 256 线程)
+        └── Thread Tile: TM=4 (沿 M, 1D)
+            └── Thread (ty=0,tx=0): 计算 C[0,0]..C[3,0] 共 4 个元素
+            └── reg_A[TM][BK] = reg_A[4][4] 从 SMEM 加载一次, 复用 TM=4 次
+```
+
 ### 4.2 线程映射
 
 Block(0,0) 覆盖 C[0:8, 0:8] = 64 个元素:
@@ -433,6 +470,19 @@ AI (GMEM) = 8192 / 8192 ≈ 1.0000 FLOPs/byte  (K1 的 4.12 倍)
 - 每个线程负责 4×4=16 个 C 元素
 - Block(0,0) 的 4 个线程覆盖 C[0:8, 0:8] = 64 元素
 
+#### 5.1.5 层次树
+
+```
+矩阵 C (16×16)
+└── Grid: 2×2 = 4 blocks
+    └── Block: BM=8, BN=8, BK=4 (blockDim=(2,2), 仅 4 线程/block!)
+        ├── [GMEM→SMEM] As[8×4] + Bs[4×8]
+        └── Thread Tile: TM=4, TN=4 (2D, 16 元素/线程)
+            └── 4 线程 × 16 元素 = 64 元素 = 1 Block
+            └── Thread(0,0): C[0:4,0:4]    Thread(0,1): C[0:4,4:8]
+            └── Thread(1,0): C[4:8,0:4]    Thread(1,1): C[4:8,4:8]
+```
+
 ### 5.2 线程块划分
 
 Block(0,0) 覆盖 C[0:8, 0:8]:
@@ -498,6 +548,19 @@ float reg_B[BK][TN];  // reg_B[4][4] = 16 registers
 
 然后对 reg_A 和 reg_B 执行 4×4×4 的 FMA 循环——所有操作数都在寄存器中。
 
+#### 6.1.5 层次树
+
+```
+(K4 层次 + 显式寄存器缓存)
+矩阵 C (16×16)
+└── (同 K4 的 Block/Warp 层次)
+    └── Thread Tile: TM=4, TN=4
+        ├── [SMEM→RF] reg_A[4][4] ← As[ty*4:ty*4+4, :]  (加载到寄存器)
+        ├── [SMEM→RF] reg_B[4][4] ← Bs[:, tx*4:tx*4+4]
+        └── [RF: FMA] reg_C[tm][tn] += reg_A[tm][k] * reg_B[k][tn]
+            全部操作数在寄存器中, 无 SMEM 重复访问
+```
+
 ### 6.2 内存层次
 
 ```
@@ -543,6 +606,17 @@ smem[3] = global[3];
 reinterpret_cast<float4*>(smem)[0] = reinterpret_cast<float4*>(global)[0];
 ```
 
+#### 7.1.5 层次树
+
+```
+(K5 层次 + float4 向量化)
+矩阵 C (16×16)
+└── Block: BM=8, BN=8, BK=4
+    ├── [GMEM→SMEM] float4 加载: 8 次 128-bit 事务 (vs K5 的 32 次 32-bit)
+    │   每行 4 个 float 打包: float4(A[i,0], A[i,1], A[i,2], A[i,3])
+    └── [SMEM→RF] float4 加载 reg_A, reg_B 片段
+```
+
 ### 7.2 具体示例
 
 Block(0,0), kt=0 时加载 A[0:8, 0:4] 从 **全局内存 (GMEM)** 到 **共享内存 (SMEM)**。
@@ -580,6 +654,21 @@ float4(A[1,0], A[1,1], A[1,2], A[1,3])
 **第一性原理**: Pipeline 化。**全局内存 (GMEM)** 加载和计算是两个独立的硬件单元（内存控制器 vs CUDA Cores）。如果让它们串行执行，总时间 = 加载时间 + 计算时间。如果让它们重叠，总时间 ≈ max(加载时间, 计算时间)。
 
 双缓冲使用两套 **共享内存 (SMEM)**（PING 和 PONG），交替用于加载和计算。
+
+#### 8.1.5 层次树
+
+```
+(K6 层次 + Ping-Pong 双缓冲)
+矩阵 C (16×16)
+└── Block: BM=8, BN=8, BK=4
+    ├── SMEM 双缓冲: PING[8×4+4×8] + PONG[8×4+4×8] (双倍 SMEM)
+    └── Pipeline 时间线 (Block(0,0)):
+        ├── k_step=0: [LOAD→PING]                          # 预加载
+        ├── k_step=1: [LOAD→PONG] ∥ [COMPUTE with PING]    # 加载与计算重叠
+        ├── k_step=2: [LOAD→PING]  ∥ [COMPUTE with PONG]
+        ├── k_step=3:               [COMPUTE with PING]     # 最后一轮
+        └── __syncthreads() 只在每轮结束时同步一次
+```
 
 ### 8.2 Ping-Pong 时间线
 
