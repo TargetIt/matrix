@@ -106,8 +106,8 @@
 
 ```
 矩阵 C (16×16, GMEM)
-└── Grid: 4×4 = 16 blocks (gridDim=(4,4,1))
-    └── Block: 16 threads (blockDim=(4,4))
+└── Grid: gridDim=(4,4,1), 共 4×4=16 blocks  (行: CEIL_DIV(M,4)=16/4=4, 列: CEIL_DIV(N,4)=16/4=4)
+    └── Block: 16 threads (blockDim.x=4, blockDim.y=4)
         └── Thread: 1 element of C
             └── 16 次迭代 K: 每次 2×GMEM读 + 1×FMA
             总 GMEM 流量: (4096+4096+256)×4 = 33,792 bytes
@@ -185,7 +185,7 @@ C[0,0] = A[0,0]×B[0,0] + A[0,1]×B[1,0] + ... + A[0,15]×B[15,0]
 
 ```
 矩阵 C (16×16)
-└── Grid: 4×4 = 16 blocks
+└── Grid: gridDim=(4,4), 共 4×4=16 blocks  (行: 16/BM=16/4=4, 列: 16/BN=16/4=4)
     └── Block: BM=4, BN=4, BK=4 (blockDim=(4,4))
         ├── [GMEM→SMEM] As[4×4] + Bs[4×4] (32 floats = 128 bytes) per K-step
         ├── K 迭代: 16/BK=4 slides along K dimension
@@ -367,7 +367,7 @@ AI (GMEM) = 8192 / 9216 ≈ 0.8889 FLOPs/byte  (K1 的 3.67 倍)
 
 ```
 矩阵 C (16×16)
-└── Grid: 2×2 = 4 blocks (16/BM=16/8=2)
+└── Grid: gridDim=(2,2), 共 2×2=4 blocks  (行: 16/BM=16/8=2, 列: 16/BN=16/8=2)
     └── Block: BM=8, BN=8, BK=4 (blockDim.x=8, blockDim.y=2)
         ├── [GMEM→SMEM] As[8×4] + Bs[4×8] (每步 64 floats, 256 bytes)
         ├── 线程数: 8×2=16  (vs K2的 256 线程)
@@ -474,7 +474,7 @@ AI (GMEM) = 8192 / 8192 ≈ 1.0000 FLOPs/byte  (K1 的 4.12 倍)
 
 ```
 矩阵 C (16×16)
-└── Grid: 2×2 = 4 blocks
+└── Grid: gridDim=(2,2), 共 2×2=4 blocks  (行: 16/BM=16/8=2, 列: 16/BN=16/8=2)
     └── Block: BM=8, BN=8, BK=4 (blockDim=(2,2), 仅 4 线程/block!)
         ├── [GMEM→SMEM] As[8×4] + Bs[4×8]
         └── Thread Tile: TM=4, TN=4 (2D, 16 元素/线程)
@@ -551,14 +551,16 @@ float reg_B[BK][TN];  // reg_B[4][4] = 16 registers
 #### 6.1.5 层次树
 
 ```
-(K4 层次 + 显式寄存器缓存)
 矩阵 C (16×16)
-└── (同 K4 的 Block/Warp 层次)
-    └── Thread Tile: TM=4, TN=4
-        ├── [SMEM→RF] reg_A[4][4] ← As[ty*4:ty*4+4, :]  (加载到寄存器)
-        ├── [SMEM→RF] reg_B[4][4] ← Bs[:, tx*4:tx*4+4]
-        └── [RF: FMA] reg_C[tm][tn] += reg_A[tm][k] * reg_B[k][tn]
-            全部操作数在寄存器中, 无 SMEM 重复访问
+└── Grid: gridDim=(2,2), 共 2×2=4 blocks  (行: 16/BM=16/8=2, 列: 16/BN=16/8=2)
+    └── Block: BM=8, BN=8, BK=4 (blockDim=(2,2), 仅 4 线程/block!)
+        ├── [GMEM→SMEM] As[8×4] + Bs[4×8]
+        ├── [SMEM→RF] 显式寄存器缓存: reg_A[TM][BK] + reg_B[BK][TN] (32 regs/thread)
+        └── Thread Tile: TM=4, TN=4 (2D, 16 元素/线程)
+            ├── [SMEM→RF] reg_A[4][4] ← As[ty*4:ty*4+4, :]  (加载到寄存器)
+            ├── [SMEM→RF] reg_B[4][4] ← Bs[:, tx*4:tx*4+4]
+            └── [RF: FMA] reg_C[tm][tn] += reg_A[tm][k] * reg_B[k][tn]
+                全部操作数在寄存器中, 无 SMEM 重复访问
 ```
 
 ### 6.2 内存层次
@@ -609,12 +611,14 @@ reinterpret_cast<float4*>(smem)[0] = reinterpret_cast<float4*>(global)[0];
 #### 7.1.5 层次树
 
 ```
-(K5 层次 + float4 向量化)
 矩阵 C (16×16)
-└── Block: BM=8, BN=8, BK=4
-    ├── [GMEM→SMEM] float4 加载: 8 次 128-bit 事务 (vs K5 的 32 次 32-bit)
-    │   每行 4 个 float 打包: float4(A[i,0], A[i,1], A[i,2], A[i,3])
-    └── [SMEM→RF] float4 加载 reg_A, reg_B 片段
+└── Grid: gridDim=(2,2), 共 2×2=4 blocks  (行: 16/BM=16/8=2, 列: 16/BN=16/8=2)
+    └── Block: BM=8, BN=8, BK=4 (blockDim=(2,2), 仅 4 线程/block!)
+        ├── [GMEM→SMEM] float4 加载: 8 次 128-bit 事务 (vs K5 的 32 次 32-bit)
+        │   每行 4 个 float 打包: float4(A[i,0], A[i,1], A[i,2], A[i,3])
+        │   A tile (8×4): 8行×1float4 = 8 事务 | B tile (4×8): 8列×1float4 = 8 事务
+        ├── [SMEM→RF] 显式寄存器缓存 reg_A[TM][BK] + reg_B[BK][TN]
+        └── Thread Tile: TM=4, TN=4 (2D, 16 元素/线程)
 ```
 
 ### 7.2 具体示例
@@ -658,16 +662,19 @@ float4(A[1,0], A[1,1], A[1,2], A[1,3])
 #### 8.1.5 层次树
 
 ```
-(K6 层次 + Ping-Pong 双缓冲)
 矩阵 C (16×16)
-└── Block: BM=8, BN=8, BK=4
-    ├── SMEM 双缓冲: PING[8×4+4×8] + PONG[8×4+4×8] (双倍 SMEM)
-    └── Pipeline 时间线 (Block(0,0)):
-        ├── k_step=0: [LOAD→PING]                          # 预加载
-        ├── k_step=1: [LOAD→PONG] ∥ [COMPUTE with PING]    # 加载与计算重叠
-        ├── k_step=2: [LOAD→PING]  ∥ [COMPUTE with PONG]
-        ├── k_step=3:               [COMPUTE with PING]     # 最后一轮
-        └── __syncthreads() 只在每轮结束时同步一次
+└── Grid: gridDim=(2,2), 共 2×2=4 blocks  (行: 16/BM=16/8=2, 列: 16/BN=16/8=2)
+    └── Block: BM=8, BN=8, BK=4 (blockDim=(2,2), 仅 4 线程/block!)
+        ├── SMEM 双缓冲: PING[8×4+4×8] + PONG[8×4+4×8] (双倍 SMEM)
+        ├── [GMEM→SMEM] float4 加载到当前写入缓冲
+        ├── [SMEM→RF] 显式寄存器缓存 reg_A[TM][BK] + reg_B[BK][TN]
+        ├── Thread Tile: TM=4, TN=4 (2D, 16 元素/线程)
+        └── Pipeline 时间线 (Block(0,0)):
+            ├── k_step=0: [LOAD→PING]                          # 预加载
+            ├── k_step=1: [LOAD→PONG] ∥ [COMPUTE with PING]    # 加载与计算重叠
+            ├── k_step=2: [LOAD→PING]  ∥ [COMPUTE with PONG]
+            ├── k_step=3:               [COMPUTE with PING]     # 最后一轮
+            └── __syncthreads() 只在每轮结束时同步一次
 ```
 
 ### 8.2 Ping-Pong 时间线

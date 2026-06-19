@@ -125,6 +125,21 @@ GMEM (全局内存) ──load──► SMEM (共享内存) ──load──► 
 
 ## 3. Level 1 — Thread Block Tile：聚焦 Block (0,0)
 
+### 如何计算 Grid 大小
+
+Grid 大小由问题规模 M、N 和 Thread Block Tile 大小 BM、BN 共同决定：
+
+```
+gridDim = (CEIL_DIV(M, BM), CEIL_DIV(N, BN)) = (16/8, 16/8) = (2, 2)
+```
+
+- `gridDim.m = CEIL_DIV(M, BM)` = 沿 M 方向需要 16/8 = 2 个 Block
+- `gridDim.n = CEIL_DIV(N, BN)` = 沿 N 方向需要 16/8 = 2 个 Block
+- 总计启动 2 × 2 = 4 个 Thread Block，每个 Block 负责一个 8×8 的 C 子块
+
+Block 坐标 (i, j) 负责的子块范围：
+- `C[i*BM : (i+1)*BM, j*BN : (j+1)*BN]`
+
 ### CUTLASS GEMM 分层全貌
 
 ```
@@ -132,7 +147,10 @@ CUTLASS GEMM 分层全貌:
 ┌─────────────────────────────────────────────────┐
 │ 矩阵 C (16×16)  [GMEM]                          │
 │ ┌─────────────────────────────────────────────┐ │
-│ │ Grid: 2×2 Thread Blocks                     │ │
+│ │ Grid: gridDim=(2,2)                         │ │
+│ │ M/BM = 16/8 = 2 blocks along M             │ │
+│ │ N/BN = 16/8 = 2 blocks along N             │ │
+│ │ 总计: 2×2 = 4 Thread Blocks                │ │
 │ │ ┌─────────────────────────────────────────┐ │ │
 │ │ │ Thread Block (0,0): C[0:8, 0:8]         │ │ │
 │ │ │ BM=8, BN=8, BK=4                        │ │ │
