@@ -1,6 +1,6 @@
 """
-CUTLASS Hierarchical GEMM Simulation
-=====================================
+CUTLASS Hierarchical GEMM Simulation (整数矩阵, seed=1, -5..5)
+==============================================================
 Verification script for 03-cutlass-hierarchy.md
 
 Parameters:
@@ -15,21 +15,26 @@ CUTLASS uses column-major for A and row-major for B internally,
 but for this demo we use row-major throughout for simplicity.
 The key conceptual decomposition is identical.
 
+Memory hierarchy labels:
+  全局内存 (GMEM / HBM) — matrices A, B, C originally reside here
+  共享内存 (SMEM)       — Thread Block Tile loads data here
+  寄存器 (Register File / RF) — Warp Tile and Thread Tile compute here
+
 Thread block grid: 2x2 blocks (C is 16x16, block tile is 8x8)
 Warp grid per block: 2x2 warps (block tile 8x8, warp tile 4x4)
 Thread grid per warp: 2x2 threads (warp tile 4x4, thread tile 2x2)
 """
 import numpy as np
 
-np.random.seed(42)
-np.set_printoptions(precision=6, suppress=True, linewidth=200)
+np.random.seed(1)
+np.set_printoptions(precision=0, suppress=True, linewidth=200)
 
 # ──────────────────────────────────────────────
 # 1. Problem definition
 # ──────────────────────────────────────────────
 M, N, K = 16, 16, 16
-A = np.random.randn(M, K).astype(np.float32)
-B = np.random.randn(K, N).astype(np.float32)
+A = np.random.randint(-5, 6, (M, K)).astype(np.float32)
+B = np.random.randint(-5, 6, (K, N)).astype(np.float32)
 C_expected = A @ B
 
 # ──────────────────────────────────────────────
@@ -57,9 +62,11 @@ num_thr_n   = WN // TN # 2 threads per warp (N direction)
 threads_per_block = num_warp_m * num_warp_n * num_thr_m * num_thr_n
 
 print("=" * 72)
-print("CUTLASS Hierarchical GEMM — Verification Script")
+print("CUTLASS Hierarchical GEMM — Verification Script (整数矩阵, seed=1)")
 print("=" * 72)
 print(f"\nProblem:  M={M}, N={N}, K={K}")
+print(f"数据类型: int32 randint(-5,6) → float32")
+print(f"随机种子: 1")
 print(f"Block Tile:  BM={BM}, BN={BN}, BK={BK}")
 print(f"Warp Tile:   WM={WM}, WN={WN}")
 print(f"Thread Tile: TM={TM}, TN={TN}")
@@ -72,14 +79,20 @@ print(f"Logical threads/block: {threads_per_block}")
 # 3. Print all matrices
 # ──────────────────────────────────────────────
 print("\n" + "=" * 72)
-print("INPUT MATRICES (all elements)")
+print("INPUT MATRICES (all elements — 全局内存 GMEM / HBM)")
 print("=" * 72)
 print("\nMatrix A (16×16):")
-print(A)
+for i in range(M):
+    row_str = "  ".join(f"{A[i, j]:+3.0f}" for j in range(K))
+    print(f"  A[{i},:] = [{row_str}]")
 print("\nMatrix B (16×16):")
-print(B)
+for i in range(N):
+    row_str = "  ".join(f"{B[i, j]:+3.0f}" for j in range(N))
+    print(f"  B[{i},:] = [{row_str}]")
 print("\nExpected C = A @ B (16×16):")
-print(C_expected)
+for i in range(M):
+    row_str = "  ".join(f"{C_expected[i, j]:+4.0f}" for j in range(N))
+    print(f"  C[{i},:] = [{row_str}]")
 
 # ──────────────────────────────────────────────
 # 4. Full hierarchy simulation
@@ -113,20 +126,21 @@ for bi in range(num_block_m):
         for k_block in range(K // BK):
             k_start = k_block * BK
 
-            print(f"\n  ┌─ K iteration {k_block} (k = {k_start}:{k_start+BK}) ──────────────┐")
+            print(f"\n  ┌─ K iteration {k_block} (k = {k_start}:{k_start+BK}) ──────────────────────┐")
+            print(f"  │                     [GMEM ──load──► SMEM]                             │")
 
-            # Load A tile (BM×BK = 8×4) from global to shared memory
+            # Load A tile (BM×BK = 8×4) from global memory to shared memory
             A_tile = A[m_start:m_start+BM, k_start:k_start+BK].copy()
-            print(f"  │  A_tile (8×4) loaded into shared memory:                            │")
+            print(f"  │  A_tile (8×4) loaded: 全局内存(GMEM) ──► 共享内存(SMEM)               │")
             for i_local in range(BM):
-                row_str = "  ".join(f"{A_tile[i_local, j]:+.6f}" for j in range(BK))
+                row_str = "  ".join(f"{A_tile[i_local, j]:+3.0f}" for j in range(BK))
                 print(f"  │    row {i_local}: [{row_str}]  │")
 
-            # Load B tile (BK×BN = 4×8) from global to shared memory
+            # Load B tile (BK×BN = 4×8) from global memory to shared memory
             B_tile = B[k_start:k_start+BK, n_start:n_start+BN].copy()
-            print(f"  │  B_tile (4×8) loaded into shared memory:                            │")
+            print(f"  │  B_tile (4×8) loaded: 全局内存(GMEM) ──► 共享内存(SMEM)               │")
             for kk in range(BK):
-                row_str = "  ".join(f"{B_tile[kk, j]:+.6f}" for j in range(BN))
+                row_str = "  ".join(f"{B_tile[kk, j]:+3.0f}" for j in range(BN))
                 print(f"  │    row {kk}: [{row_str}]  │")
 
             # Block-level outer product: (8×4) @ (4×8) → (8×8)
@@ -135,12 +149,13 @@ for bi in range(num_block_m):
 
             print(f"  │  Block contribution A_tile @ B_tile (8×8):                          │")
             for i_local in range(BM):
-                row_str = "  ".join(f"{block_contrib[i_local, j]:+.6f}" for j in range(BN))
+                row_str = "  ".join(f"{block_contrib[i_local, j]:+4.0f}" for j in range(BN))
                 print(f"  │    row {i_local}: [{row_str}]  │")
 
             # ─── WARP LEVEL ───
             print(f"  │                                                                      │")
             print(f"  │  ── WARP DECOMPOSITION ──                                           │")
+            print(f"  │           [SMEM ──load──► RF (寄存器)]                               │")
             print(f"  │  This 8×8 block is divided into {num_warp_m}×{num_warp_n} = {num_warp_m*num_warp_n} warp tiles (4×4 each):│")
 
             for wi in range(num_warp_m):
@@ -150,14 +165,14 @@ for bi in range(num_block_m):
                     warp_contrib = block_contrib[wm_s:wm_s+WM, wn_s:wn_s+WN]
                     print(f"  │    Warp ({wi},{wj}): C_block[{wm_s}:{wm_s+WM}, {wn_s}:{wn_s+WN}] 4×4 =")
                     for wi_local in range(WM):
-                        row_str = "  ".join(f"{warp_contrib[wi_local, j]:+.6f}" for j in range(WN))
+                        row_str = "  ".join(f"{warp_contrib[wi_local, j]:+4.0f}" for j in range(WN))
                         print(f"  │      [{row_str}]")
 
             print(f"  └{'─'*70}┘")
 
-        print(f"\n  >>> Block ({bi},{bj}) accumulated result (8×8):")
+        print(f"\n  >>> Block ({bi},{bj}) accumulated result (8×8) — 写回 全局内存(GMEM):")
         for i_local in range(BM):
-            row_str = "  ".join(f"{C_block[i_local, j]:+.6f}" for j in range(BN))
+            row_str = "  ".join(f"{C_block[i_local, j]:+4.0f}" for j in range(BN))
             print(f"      row {i_local}: [{row_str}]")
 
         C_sim[m_start:m_start+BM, n_start:n_start+BN] = C_block
@@ -169,6 +184,7 @@ print("\n" + "=" * 72)
 print("LEVEL 2 — THREAD TILE (detailed walkthrough for Block (0,0))")
 print("=" * 72)
 print(f"\nEach warp tile (4×4) is decomposed into {num_thr_m}×{num_thr_n} = {num_thr_m*num_thr_n} thread tiles (2×2 each).")
+print(f"Each thread computes a 2×2 tile using FMA instructions in RF (寄存器).")
 
 # Recompute Block (0,0) with thread-level tracking
 m_start, n_start = 0, 0
@@ -182,6 +198,10 @@ print(f"  Thread (1,1) → C[2:4, 2:4]")
 thread_accum = np.zeros((num_thr_m, num_thr_n, TM, TN), dtype=np.float32)
 
 print(f"\nNow walk through ALL 4 K-iterations for Thread (0,0) — C[0:2, 0:2]")
+print(f"  Memory flow per thread iteration:")
+print(f"    GMEM ──► SMEM  (Block-level load, done once per K-iteration for all threads)")
+print(f"    SMEM ──► RF    (Warp/Thread loads its own A_frag and B_frag from SMEM to registers)")
+print(f"    RF   ──► FMA   (Thread computes A_frag @ B_frag in registers)")
 
 for k_block in range(K // BK):
     k_start = k_block * BK
@@ -195,25 +215,25 @@ for k_block in range(K // BK):
     thread_accum[0, 0] += step_contrib
 
     print(f"\n  K-iteration {k_block} (k=[{k_start}:{k_start+BK}]):")
-    print(f"    A fragment (2×4) from global memory (for Thread[0,0]):")
+    print(f"    [SMEM ──► RF] A fragment (2×4) loaded from 共享内存(SMEM) to 寄存器(RF):")
     for ti in range(TM):
-        row_str = "  ".join(f"{A_frag[ti, j]:+.6f}" for j in range(BK))
+        row_str = "  ".join(f"{A_frag[ti, j]:+3.0f}" for j in range(BK))
         print(f"      A_frag[{ti},:] = [{row_str}]")
-    print(f"    B fragment (4×2) from global memory:")
+    print(f"    [SMEM ──► RF] B fragment (4×2) loaded from 共享内存(SMEM) to 寄存器(RF):")
     for kk in range(BK):
-        row_str = "  ".join(f"{B_frag[kk, j]:+.6f}" for j in range(TN))
+        row_str = "  ".join(f"{B_frag[kk, j]:+3.0f}" for j in range(TN))
         print(f"      B_frag[{kk},:] = [{row_str}]")
-    print(f"    This iteration contribution: (2×4)@(4×2) → (2×2):")
+    print(f"    [RF: FMA] This iteration contribution (2×4)@(4×2) → (2×2):")
     for ti in range(TM):
-        row_str = "  ".join(f"{step_contrib[ti, j]:+.6f}" for j in range(TN))
+        row_str = "  ".join(f"{step_contrib[ti, j]:+4.0f}" for j in range(TN))
         print(f"      [{row_str}]")
-    print(f"    Running accumulator for Thread (0,0):")
+    print(f"    [RF] Running accumulator for Thread (0,0):")
     for ti in range(TM):
-        row_str = "  ".join(f"{thread_accum[0,0,ti,j]:+.6f}" for j in range(TN))
+        row_str = "  ".join(f"{thread_accum[0, 0, ti, j]:+4.0f}" for j in range(TN))
         print(f"      [{row_str}]")
 
 # Now do the same for ALL threads
-print(f"\n\nFinal thread accumulators for Warp (0,0) — C[0:4, 0:4]:")
+print(f"\n\nFinal thread accumulators for Warp (0,0) — C[0:4, 0:4] (RF → 写回 GMEM):")
 print(f"  (This shows which 2×2 tile each of the 4 threads produces)")
 
 full_thread_accum = {
@@ -230,16 +250,16 @@ for (ti, tj), acc in full_thread_accum.items():
 
 print(f"  Thread (0,0) → C[0:2, 0:2] =")
 for i in range(TM):
-    print(f"    [{full_thread_accum[(0,0)][i,0]:+.6f}  {full_thread_accum[(0,0)][i,1]:+.6f}]")
+    print(f"    [{full_thread_accum[(0,0)][i,0]:+4.0f}  {full_thread_accum[(0,0)][i,1]:+4.0f}]")
 print(f"  Thread (0,1) → C[0:2, 2:4] =")
 for i in range(TM):
-    print(f"    [{full_thread_accum[(0,1)][i,0]:+.6f}  {full_thread_accum[(0,1)][i,1]:+.6f}]")
+    print(f"    [{full_thread_accum[(0,1)][i,0]:+4.0f}  {full_thread_accum[(0,1)][i,1]:+4.0f}]")
 print(f"  Thread (1,0) → C[2:4, 0:2] =")
 for i in range(TM):
-    print(f"    [{full_thread_accum[(1,0)][i,0]:+.6f}  {full_thread_accum[(1,0)][i,1]:+.6f}]")
+    print(f"    [{full_thread_accum[(1,0)][i,0]:+4.0f}  {full_thread_accum[(1,0)][i,1]:+4.0f}]")
 print(f"  Thread (1,1) → C[2:4, 2:4] =")
 for i in range(TM):
-    print(f"    [{full_thread_accum[(1,1)][i,0]:+.6f}  {full_thread_accum[(1,1)][i,1]:+.6f}]")
+    print(f"    [{full_thread_accum[(1,1)][i,0]:+4.0f}  {full_thread_accum[(1,1)][i,1]:+4.0f}]")
 
 # ──────────────────────────────────────────────
 # 6. Simulating double-buffered shared memory (ping-pong)
@@ -256,6 +276,7 @@ computation and memory latency.
   Iter 0: [Load tile 0 → buf_A] [Compute tile 0]
   Iter 1:                     [Load tile 1 → buf_B] [Compute tile 1]
   Iter 2:                                         [Load tile 2 → buf_A] ...
+  Iter 3:                                                           [Load tile 3 → buf_B] ...
 
 This is implemented via __syncthreads() barriers and two sets of
 shared memory arrays (buffer A, buffer B).
@@ -265,11 +286,11 @@ shared memory arrays (buffer A, buffer B).
 # 7. Epilogue — fusing bias + ReLU
 # ──────────────────────────────────────────────
 print("=" * 72)
-print("EPILOGUE — Fusing operations after matmul")
+print("EPILOGUE — Fusing operations after matmul (整数矩阵)")
 print("=" * 72)
 
-bias = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
-                 0.9, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1], dtype=np.float32)
+bias = np.array([1, 2, 3, 4, 5, 6, 7, 8,
+                 9, 5, 4, 3, 2, 1, 0, -1], dtype=np.float32)
 
 # In CUTLASS epilogue, each thread block applies bias + ReLU to its 8×8 output tile
 # without writing back to global memory and re-reading.
@@ -285,13 +306,13 @@ print(bias.reshape(M, 1))
 print(f"\nBlock (0,0) — C + bias (before ReLU):")
 block00_with_bias = C_expected[0:BM, 0:BN] + bias[0:BM].reshape(BM, 1)
 for i in range(BM):
-    row_str = "  ".join(f"{block00_with_bias[i, j]:+.6f}" for j in range(BN))
+    row_str = "  ".join(f"{block00_with_bias[i, j]:+4.0f}" for j in range(BN))
     print(f"  row {i}: [{row_str}]")
 
 print(f"\nBlock (0,0) — ReLU(C + bias):")
 block00_final = np.maximum(block00_with_bias, 0.0)
 for i in range(BM):
-    row_str = "  ".join(f"{block00_final[i, j]:+.6f}" for j in range(BN))
+    row_str = "  ".join(f"{block00_final[i, j]:+4.0f}" for j in range(BN))
     print(f"  row {i}: [{row_str}]")
 
 print("""
@@ -328,7 +349,9 @@ print("=" * 72)
 print("VERIFICATION")
 print("=" * 72)
 print("\nSimulated C (from hierarchy):")
-print(C_sim)
+for i in range(M):
+    row_str = "  ".join(f"{C_sim[i, j]:+4.0f}" for j in range(N))
+    print(f"  C_sim[{i},:] = [{row_str}]")
 print(f"\nMax absolute error: {np.max(np.abs(C_sim - C_expected)):.10f}")
 
 if np.allclose(C_sim, C_expected, atol=1e-5):
