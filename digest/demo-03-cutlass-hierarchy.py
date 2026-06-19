@@ -248,7 +248,11 @@ full_thread_accum = {
 for (ti, tj), acc in full_thread_accum.items():
     m_row = ti * TM
     n_col = tj * TN
-    acc[:, :] = C_expected[m_row:m_row+TM, n_col:n_col+TN]
+    for k_block in range(K // BK):
+        k_start = k_block * BK
+        A_frag = A[m_row:m_row+TM, k_start:k_start+BK]
+        B_frag = B[k_start:k_start+BK, n_col:n_col+TN]
+        acc[:, :] += A_frag @ B_frag
 
 print(f"  Thread (0,0) → C[0:2, 0:2] =")
 for i in range(TM):

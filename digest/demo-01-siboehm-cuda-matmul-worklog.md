@@ -802,7 +802,8 @@ K5 2D:       全局内存 (GMEM): 同 K4 (~4,096B)
 K10 Warp:    全局内存 (GMEM) reads: ~4,096B
              BK=8 意味着 2 个 K-tile, 每个 tile 做更多计算
              AI (vs GMEM) ≈ 2.0 FLOPs/Byte (demo scale)
-             (实际大规模下 warp 级寄存器复用将 AI 推至 ~8.0)
+             注意：demo 的 2.0 是按 16×16 小矩阵和简化 tile 口径计算；
+             原文大规模 kernel 会因为更大的 tile、warp/register 复用和更少的边界开销获得更高有效 AI。
 ```
 
 ### 9.3 内存流量汇总表 (GMEM vs SMEM)
@@ -841,10 +842,14 @@ Ridge Point (vs GMEM):           30,000 / 768 ≈ 39 FLOPs/Byte
 │     ← Memory Bound →│← Compute Bound →       │
 └──────────────────────────────────────────────┘
 
-K1/K2:    AI < 0.1,  深度 Memory Bound (全局内存 (GMEM) 带宽瓶颈)
-K3:       AI ≈ 0.5,  Memory Bound (GMEM → SMEM 转移开始见效)
-K4-K6:    AI ≈ 1-3,  过渡区 (SMEM 和寄存器复用提高有效 AI)
-K10:      AI ≈ 8,    接近 Compute Bound (warp 级寄存器复用)
+Demo 16×16 口径：
+K1/K2:    AI ≈ 0.24, 深度 Memory Bound (全局内存 (GMEM) 带宽瓶颈)
+K3:       AI ≈ 1.0,  Memory Bound，但 GMEM 读取已经明显下降
+K4-K6:    AI ≈ 2.0,  仍是 Memory Bound，主要收益来自更好的复用和指令效率
+K10:      AI ≈ 2.0,  demo 规模下 GMEM 数据量与 K4-K6 相近
+
+原文大规模 kernel 口径：
+K10 通过更大的 tile、warp 级寄存器复用、向量化和更好的调度，把有效 AI 和实际吞吐继续推高，接近 cuBLAS 的性能区间。
 cuBLAS:   AI ≈ 245,  深度 Compute Bound (利用了 Tensor Cores)
 ```
 

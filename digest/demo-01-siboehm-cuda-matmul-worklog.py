@@ -8,7 +8,11 @@ Demo: M=N=K=16, seed=1, randint(0, 10), float32
 This script simulates each kernel stage and verifies against numpy ground truth.
 """
 
+import warnings
+
 import numpy as np
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 np.random.seed(1)
 np.set_printoptions(linewidth=220, precision=6, suppress=True, threshold=10000)
@@ -708,9 +712,10 @@ print("  Peak fp32 compute: ~30 TFLOPs/s (A6000)")
 print("  Peak 全局内存 (GMEM) bandwidth: ~768 GB/s (A6000)")
 print("  Peak 共享内存 (SMEM) bandwidth: ~12 TB/s (A6000)")
 print("  Ridge point (vs GMEM): 30e12 / 768e9 = 39 FLOPs/Byte")
-print("  K3 AI (vs GMEM): ~0.5 FLOPs/Byte -> 内存带宽瓶颈 (memory bound)")
-print("  K5 AI (vs GMEM): ~2.0 FLOPs/Byte -> still memory bound but improving")
-print("  K10 AI (vs GMEM): ~8.0 FLOPs/Byte -> approaching compute-bound region")
+print("  Demo-scale K3 AI (vs GMEM reads): ~1.0 FLOPs/Byte -> still memory bound")
+print("  Demo-scale K5 AI (vs GMEM reads): ~2.0 FLOPs/Byte -> improved reuse, still memory bound")
+print("  Demo-scale K10 AI (vs GMEM reads): ~2.0 FLOPs/Byte -> same demo GMEM bytes, better execution structure")
+print("  Article-scale kernels improve effective AI further through larger tiles and warp-level/register reuse")
 print("  Key insight: 共享内存 (SMEM) provides ~16x bandwidth advantage over 全局内存 (GMEM)")
 
 

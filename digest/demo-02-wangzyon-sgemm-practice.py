@@ -15,7 +15,11 @@ CUDA SGEMM 优化验证脚本
   K7 Double Buffering: 同 K6 + 双缓冲
 """
 
+import warnings
+
 import numpy as np
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 np.random.seed(1)
 
@@ -285,7 +289,7 @@ print("BM=8, BN=8, BK=4, TM=4, blockDim=(8,2), gridDim=(2,2)")
 print("=" * 70)
 
 C_k3 = np.zeros((16, 16), dtype=np.float32)
-gA_k3, gB_k3, gC_k3 = 0, 0, 0
+gA_k3, gB_k3 = 0, 0
 
 for block_row in range(2):
     for block_col in range(2):
@@ -307,8 +311,12 @@ for block_row in range(2):
                         for kk in range(4):
                             acc += As[ty * 4 + tm, kk] * Bs[kk, tx]
                         C_k3[row, n_start + tx] += acc
-            gC_k3 += 64  # GMEM write per block per k-step
 
+gC_k3 = 4 * 64  # real CUDA-style final GMEM write: 4 blocks * 8x8 C
+# 1D tile: each thread reads TM A values plus one shared B value per kk.
+smem_read_floats_k3 = 4 * 4 * 16 * 4 * (4 + 1)
+smem_write_floats_k3 = 4 * 4 * 64
+smem_bytes_k3 = (smem_read_floats_k3 + smem_write_floats_k3) * 4
 gmem_bytes_k3 = (gA_k3 + gB_k3 + gC_k3) * 4
 ai_k3_gmem = total_flops / gmem_bytes_k3
 
@@ -357,7 +365,7 @@ print("BM=8, BN=8, BK=4, TM=4, TN=4, blockDim=(2,2), gridDim=(2,2)")
 print("=" * 70)
 
 C_k4 = np.zeros((16, 16), dtype=np.float32)
-gA_k4, gB_k4, gC_k4 = 0, 0, 0
+gA_k4, gB_k4 = 0, 0
 
 for block_row in range(2):
     for block_col in range(2):
@@ -380,8 +388,11 @@ for block_row in range(2):
                             for kk in range(4):
                                 acc += As[ty * 4 + tm, kk] * Bs[kk, tx * 4 + tn]
                             C_k4[row, col] += acc
-            gC_k4 += 64
 
+gC_k4 = 4 * 64
+smem_read_floats_k4 = 4 * 4 * 4 * (4 * 4 + 4 * 4)
+smem_write_floats_k4 = 4 * 4 * 64
+smem_bytes_k4 = (smem_read_floats_k4 + smem_write_floats_k4) * 4
 gmem_bytes_k4 = (gA_k4 + gB_k4 + gC_k4) * 4
 ai_k4_gmem = total_flops / gmem_bytes_k4
 
@@ -422,7 +433,7 @@ print("同 K4 参数, 显式 reg_A[TM][BK], reg_B[BK][TN]")
 print("=" * 70)
 
 C_k5 = np.zeros((16, 16), dtype=np.float32)
-gA_k5, gB_k5, gC_k5 = 0, 0, 0
+gA_k5, gB_k5 = 0, 0
 
 for block_row in range(2):
     for block_col in range(2):
@@ -444,8 +455,11 @@ for block_row in range(2):
                             for kk in range(4):
                                 acc += reg_A[tm, kk] * reg_B[kk, tn]
                             C_k5[m_start + ty * 4 + tm, n_start + tx * 4 + tn] += acc
-            gC_k5 += 64
 
+gC_k5 = 4 * 64
+smem_read_floats_k5 = 4 * 4 * 4 * (4 * 4 + 4 * 4)
+smem_write_floats_k5 = 4 * 4 * 64
+smem_bytes_k5 = (smem_read_floats_k5 + smem_write_floats_k5) * 4
 gmem_bytes_k5 = (gA_k5 + gB_k5 + gC_k5) * 4
 ai_k5_gmem = total_flops / gmem_bytes_k5
 
@@ -466,7 +480,7 @@ print("同 K5, 每次加载 128-bit = 4 floats")
 print("=" * 70)
 
 C_k6 = np.zeros((16, 16), dtype=np.float32)
-gA_k6, gB_k6, gC_k6 = 0, 0, 0
+gA_k6, gB_k6 = 0, 0
 
 for block_row in range(2):
     for block_col in range(2):
@@ -488,8 +502,9 @@ for block_row in range(2):
                             for kk in range(4):
                                 acc += reg_A[tm, kk] * reg_B[kk, tn]
                             C_k6[m_start + ty * 4 + tm, n_start + tx * 4 + tn] += acc
-            gC_k6 += 64
 
+gC_k6 = 4 * 64
+smem_bytes_k6 = smem_bytes_k5
 gmem_bytes_k6 = (gA_k6 * 4 + gB_k6 * 4 + gC_k6) * 4
 ai_k6_gmem = total_flops / gmem_bytes_k6
 
@@ -564,11 +579,14 @@ for block_row in range(2):
         gC_k7 += 64
 
 gmem_bytes_k7 = (gA_k7 * 4 + gB_k7 * 4 + gC_k7) * 4
+smem_bytes_k7 = smem_bytes_k5
+smem_storage_bytes_k7 = (8 * 4 + 4 * 8) * 2 * 4  # ping-pong buffers double SMEM capacity per block
 ai_k7_gmem = total_flops / gmem_bytes_k7
 
 print(f"\nK7 float4 事务读取 A: {gA_k7} 次")
 print(f"K7 float4 事务读取 B: {gB_k7} 次")
 print(f"K7 全局内存 (GMEM) 流量: {gmem_bytes_k7} bytes")
+print(f"K7 双缓冲共享内存容量: {smem_storage_bytes_k7} bytes per block")
 print(f"K7 AI (GMEM): {ai_k7_gmem:.4f} FLOPs/byte")
 
 print(f"\nK7 结果验证: {'PASS' if np.array_equal(C_k7, C_ref) else 'FAIL'}")
@@ -597,11 +615,11 @@ print("-" * 70)
 kernels = [
     ("K1 Naive",     gmem_bytes_k1,   0,                ai_k1_gmem, 0.0),
     ("K2 SMEM",      gmem_bytes_k2,   smem_bytes_k2,    ai_k2_gmem, 0.0),
-    ("K3 1D Tile",   gmem_bytes_k3,   0,                ai_k3_gmem, 0.0),
-    ("K4 2D Tile",   gmem_bytes_k4,   0,                ai_k4_gmem, 0.0),
-    ("K5 Reg Cache", gmem_bytes_k5,   0,                ai_k5_gmem, 0.0),
-    ("K6 Float4",    gmem_bytes_k6,   0,                ai_k6_gmem, 0.0),
-    ("K7 DblBuf",    gmem_bytes_k7,   0,                ai_k7_gmem, 0.0),
+    ("K3 1D Tile",   gmem_bytes_k3,   smem_bytes_k3,    ai_k3_gmem, 0.0),
+    ("K4 2D Tile",   gmem_bytes_k4,   smem_bytes_k4,    ai_k4_gmem, 0.0),
+    ("K5 Reg Cache", gmem_bytes_k5,   smem_bytes_k5,    ai_k5_gmem, 0.0),
+    ("K6 Float4",    gmem_bytes_k6,   smem_bytes_k6,    ai_k6_gmem, 0.0),
+    ("K7 DblBuf",    gmem_bytes_k7,   smem_bytes_k7,    ai_k7_gmem, 0.0),
 ]
 
 for name, gmem, smem, ai_g, ai_s in kernels:
