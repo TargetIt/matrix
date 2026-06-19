@@ -342,9 +342,8 @@ SMEM 访问分为两类：从 GMEM 写入 SMEM，以及线程从 SMEM 读取做 
 - **SMEM writes (GMEM→SMEM)**: 与 GMEM 读取的 A/B tiles 同量 = 4,096 + 4,096 = **8,192 bytes**
   - 16 blocks × 4 K-steps × (16 floats As + 16 floats Bs) × 4B = 8,192 bytes
 - **SMEM reads (线程从 SMEM 读入寄存器做 FMA)**:
-  - 每个线程每 K-step: 读 BK=4 个 As 元素 + 读 BK=4 个 Bs 元素 = 8 次 SMEM 读取
-  - 每线程总计: 4 K-steps × 8 次 = 32 次 SMEM 读取
-  - 256 线程总计: 256 × 32 × 4B = **32,768 bytes**
+  - **方式一（按线程直接算）**: 每个线程负责 C 的 1 个元素 = 读 A 的 1 行 (16 个 float) + 读 B 的 1 列 (16 个 float) = 32 次 SMEM 读取。256 线程 × 32 × 4B = **32,768 bytes**
+  - **方式二（按 K-step 分步算）**: 每个线程每 K-step: 读 BK=4 个 As + 读 BK=4 个 Bs = 8 次。4 K-steps × 8 = 32 次。256 × 32 × 4B = **32,768 bytes**（一致）
 - **SMEM 总流量 (reads + writes)**: 32,768 + 8,192 = **40,960 bytes**
 
 ```
