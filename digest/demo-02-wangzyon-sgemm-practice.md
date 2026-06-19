@@ -337,9 +337,15 @@ Bs:
 
 **共享内存 (SMEM) 访问 (K2):**
 
-- 本 kernel 从全局内存读取 4,096 + 4,096 = 8,192 bytes（加载 A/B tiles 到 SMEM）
-- 本 kernel 从共享内存读取 (16 blocks × 4 ksteps × 16 threads × 4 kk × 2 smem reads) × 4 = 32,768 bytes（A tiles）+ 同量 B = 共 ~40,960 bytes SMEM reads
-- SMEM writes: 16 blocks × 4 ksteps × 2 tiles × 16 floats × 4 = 2,048 bytes
+SMEM 访问分为两类：从 GMEM 写入 SMEM，以及线程从 SMEM 读取做 FMA。
+
+- **SMEM writes (GMEM→SMEM)**: 与 GMEM 读取的 A/B tiles 同量 = 4,096 + 4,096 = **8,192 bytes**
+  - 16 blocks × 4 K-steps × (16 floats As + 16 floats Bs) × 4B = 8,192 bytes
+- **SMEM reads (线程从 SMEM 读入寄存器做 FMA)**:
+  - 每个线程每 K-step: 读 BK=4 个 As 元素 + 读 BK=4 个 Bs 元素 = 8 次 SMEM 读取
+  - 每线程总计: 4 K-steps × 8 次 = 32 次 SMEM 读取
+  - 256 线程总计: 256 × 32 × 4B = **32,768 bytes**
+- **SMEM 总流量 (reads + writes)**: 32,768 + 8,192 = **40,960 bytes**
 
 ```
 AI (GMEM) = 8192 / 9216 ≈ 0.8889 FLOPs/byte  (K1 的 3.67 倍)

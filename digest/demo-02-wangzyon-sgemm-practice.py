@@ -219,19 +219,24 @@ for block_row in range(4):
         gC_k2 += 16  # GMEM write: 4x4 per block
 
 gmem_bytes_k2 = (gA_k2 + gB_k2 + gC_k2) * 4
-# SMEM accesses: each block reads As(4x4) and Bs(4x4) per kt step, 16 threads each do 4 kk reads * 2 smem reads
-# total SMEM reads = 16 blocks * 4 ksteps * (16 threads * 4 kk * 2 smem reads per inner = 128 smem reads per block-kt)
-# But more precisely: threads read As[ti,kk] and Bs[kk,tj] each inner loop
-smem_reads_k2 = 16 * 4 * 16 * 4 * 2  # 16 blocks * 4 ksteps * 16 threads * 4 kk * 2 smem reads
-smem_writes_k2 = 16 * 4 * 2  # each block-kt writes 2 tiles (As, Bs) to smem
-smem_bytes_k2 = (smem_reads_k2 + smem_writes_k2 * 16) * 4  # writes are 16-element tiles
+# SMEM reads: each thread per kt reads 4 from As + 4 from Bs = 8 smem reads
+# total SMEM reads = 16 blocks * 4 ksteps * 16 threads * (4 As_reads + 4 Bs_reads) = 8192 reads
+# SMEM writes: each block-kt writes 2 tiles (As 4x4 + Bs 4x4) = 32 floats
+
+smem_read_floats_k2 = 16 * 4 * 16 * 8   # 256 threads × 4 ksteps × 8 reads = 8192 reads
+smem_write_floats_k2 = 16 * 4 * 32      # 16 blocks × 4 ksteps × 32 floats = 2048 floats
+smem_reads_bytes_k2 = smem_read_floats_k2 * 4    # 32,768 bytes
+smem_writes_bytes_k2 = smem_write_floats_k2 * 4  # 8,192 bytes
+smem_bytes_k2 = smem_reads_bytes_k2 + smem_writes_bytes_k2  # 40,960 bytes total
 ai_k2_gmem = total_flops / gmem_bytes_k2
 
 print(f"\nK2 全局内存 (GMEM) 读取 A: {gA_k2} floats = {gA_k2*4} bytes")
 print(f"K2 全局内存 (GMEM) 读取 B: {gB_k2} floats = {gB_k2*4} bytes")
 print(f"K2 全局内存 (GMEM) 写入 C: {gC_k2} floats = {gC_k2*4} bytes")
 print(f"K2 GMEM 总流量: {gmem_bytes_k2} bytes")
-print(f"K2 共享内存 (SMEM) 访问: ~{smem_bytes_k2} bytes (reads + writes)")
+print(f"K2 共享内存 (SMEM) reads: {smem_read_floats_k2} floats = {smem_reads_bytes_k2} bytes")
+print(f"K2 共享内存 (SMEM) writes: {smem_write_floats_k2} floats = {smem_writes_bytes_k2} bytes")
+print(f"K2 共享内存 (SMEM) 总流量: {smem_bytes_k2} bytes (reads + writes)")
 print(f"K2 AI (GMEM): {ai_k2_gmem:.4f} FLOPs/byte (K1: {ai_k1_gmem:.4f})")
 
 print(f"\nK2 结果验证: {'PASS' if np.array_equal(C_k2, C_ref) else 'FAIL'}")
