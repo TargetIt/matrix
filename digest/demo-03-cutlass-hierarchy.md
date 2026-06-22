@@ -392,6 +392,14 @@ Warp(0,0) 内部 (WM=4, WN=4):
 
 **内存流动：SMEM → RF (寄存器)**
 
+这里的共享关系也很关键：同一行方向的多个 Warp 会读取相同的 A fragment，不同列方向的多个 Warp 会读取相同的 B fragment。也就是说，Block 先把 A/B tile 放进共享内存，随后多个 Warp 从共享内存中各取自己需要的片段。Warp Tile 的意义不是让每个 Warp 孤立地重新搬数据，而是把 block 级共享的数据继续分配给 warp 级计算块。
+
+> **Vulkan 联想备注：Cooperative Matrix**
+>
+> 这一层是三篇 demo 中最接近 Vulkan `VK_KHR_cooperative_matrix` 的地方。CUTLASS 这里把一个 Block 的 `8×8` 输出继续切成多个 Warp Tile，每个 Warp 负责一个 `4×4` 小矩阵块；Vulkan cooperative matrix 则把一个中等大小的 matrix 类型定义为“存储和计算分布在某个 scope 的多个 invocation 上”，通常是 subgroup。
+>
+> 你可以这样联想：CUTLASS 文档把协作过程展开给你看，告诉你 `SMEM → RF → FMA` 每一步怎么发生；Vulkan cooperative matrix 把这类 subgroup 协作矩阵乘法封装成 SPIR-V/GLSL 可用的类型和操作，让驱动根据硬件选择具体实现。二者共同点都是：小矩阵乘法不再是单个线程的普通标量循环，而是一个执行组协作完成的计算块。
+
 以 **K 迭代 0** 为例，各 Warp 的贡献（从 SMEM 加载到 RF 后计算）：
 
 ```
@@ -460,6 +468,16 @@ Thread (1,1) → C[2:4, 2:4]
 1. Block 级别：`GMEM → SMEM`（加载 A_tile, B_tile 到共享内存，所有线程共享）
 2. Thread 级别：`SMEM → RF`（Thread 从 SMEM 中加载自己的 A_frag, B_frag 到寄存器）
 3. 计算：`RF → FMA`（在寄存器中执行矩阵乘法）
+
+CUTLASS 原文这里还有一个很重要的动机：Thread Tile 不是随便切的，它要让从 SMEM 搬到寄存器的 fragment 尽快产生足够多的 FMA。通常 fragment 在 K 维度上会很小，这样每次从 SMEM 取来的 A/B 片段可以立刻在寄存器里形成多个 outer product，避免 shared memory bandwidth 成为新的瓶颈。
+
+换成更直白的话：SMEM 已经比 GMEM 快很多，但它也不是无限快。如果每从 SMEM 读一点数据只做很少计算，SMEM 还是会卡住整个 GEMM。Thread Tile 的价值就是让一个 A_frag 和一个 B_frag 在寄存器里多次相乘累加，把“每次 SMEM 读取换来的计算量”做大。
+
+> **Vulkan 联想备注：Thread Tile 与 Cooperative Matrix 的边界**
+>
+> 这里的 Thread Tile 是理解 cooperative matrix 前很重要的一步：你能看到每个 thread 如何拿到自己的 `A_frag`、`B_frag`，并在寄存器里累加一个 `2×2` 输出。它说明“小矩阵块最终还是由很多更小的片段组成”。
+>
+> 但 cooperative matrix 的重点不是让你手写每个 thread 的 `A_frag/B_frag` 分配，而是把整块 cooperative matrix 交给一个 invocation scope。换句话说，这里的 Thread Tile 是“拆开看内部机械结构”；Vulkan cooperative matrix 是“把这套机械结构包装成一个可移植的矩阵计算原语”。
 
 ### 5.2 Thread (0,0) 的 4 次 K 迭代
 
@@ -580,16 +598,27 @@ Each stage feeds data to the next: Stage1→SMEM, Stage2→RF, Stage3 uses RF fo
 ```
 
 实现要点：
-- Block 分配两块等大的 shared memory（buf_A, buf_B）
-- 计算 tile k 的同时，异步加载 tile k+1 到另一块 buffer
-- `__syncthreads()` 确保加载完成后才开始计算
+- Block 分配两块等大的 shared memory（buf_A, buf_B），让 `GMEM→SMEM` 能够 ping-pong
+- Warp/thread 也会准备两组寄存器 fragment，让 `SMEM→RF` 和 `RF→FMA` 能够交错推进
+- 计算 tile k 的同时，预取 tile k+1 所需的数据；上游阶段写入下一块 buffer，下游阶段消费当前 buffer
+- 通过展开循环和编译期常量，让编译器能把数组元素映射到寄存器，并把 load 与 FMA 指令交错排布
 - 首轮需"预加载"（prologue），末轮需"排空"（drain）
+
+原文强调 software pipelining 不是减少数学工作量，而是让多个阶段同时工作：全局内存加载、shared memory fragment 加载、寄存器 FMA 在同一个主循环里交错出现。这样做的代价也很明确：需要更多 shared memory 存两套 tile，也需要更多寄存器存两套即将使用的 fragment。收益是否成立，取决于 tile 大小、计算吞吐、访存延迟以及资源占用之间的平衡。
+
+还有一个细节容易漏掉：双缓冲可以减少同步压力。朴素写法常常是“加载 tile，同步，计算，同步，再加载下一 tile”；流水化后，上游加载和下游计算被组织进同一个循环，部分同步可以被合并或去掉。CUTLASS 依赖大量模板参数、`#pragma unroll` 和编译器调度，才能把这件事稳定地落到高效指令序列上。
 
 ---
 
 ## 7. Epilogue — 块内融合后处理（0-9 整数矩阵）
 
 每个 Block 在完成 8×8 GEMM 累加后，直接在寄存器/shared memory 中融合额外操作，最后一次性写回 global memory。避免了"写回 → 读回 → 再写回"的往返。
+
+> **Vulkan 联想备注：Cooperative Vector 的常见使用场景**
+>
+> Epilogue 本身不是 cooperative vector，但这里可以联想到 cooperative vector 常出现的场景：小型神经网络/MLP 的一层通常是 `y = activation(Wx + b)`。`W×x` 是 matrix-vector multiply，`+b` 和 activation 就像这里的 bias/ReLU 后处理。
+>
+> 因此读到 Epilogue 时可以做这个对比：CUTLASS GEMM 的 epilogue 是“矩阵乘法之后融合后处理”；Vulkan cooperative vector 常服务于“每个 invocation 独立评估一个小 MLP”，其中 matrix-vector multiply 和后处理也希望尽量留在快路径上，减少中间写回。
 
 以 Block (0,0) 融合 `bias + ReLU` 为例（bias 作用于前 8 行 = [1, 2, 3, 4, 5, 6, 7, 8]）：
 
@@ -634,6 +663,12 @@ Thread Tile (标量 FMA)  →  WMMA / mma.sync (Tensor Core)
 ```
 
 上层 Block Tile → Warp Tile 的结构完全不变，只替换最内层的计算原语。这正是 CUTLASS 分层设计的关键优势：**分层抽象使底层计算原语可插拔**。
+
+> **Vulkan 联想备注：Cooperative Matrix 最直接的对应点**
+>
+> 这一节可以直接联想到 Vulkan cooperative matrix：二者都在表达“把小矩阵乘加作为一个原语交给专用矩阵硬件/驱动去优化”。CUDA 语境下你会看到 WMMA、`mma.sync`、Tensor Core；Vulkan 语境下你会看到 `VK_KHR_cooperative_matrix`、SPIR-V cooperative matrix 类型，以及由实现枚举支持的 M/N/K 尺寸和数据类型。
+>
+> 读这里时建议抓住一个核心对比：CUTLASS/WMMA 更像 NVIDIA CUDA 路线的显式分层模板；Vulkan cooperative matrix 更像跨 Vulkan shader 生态暴露的 subgroup/workgroup 协作矩阵类型。它们不是同一个 API，但解决的问题高度相似：让小块 `D = A×B + C` 走矩阵硬件快路径。
 
 ---
 
