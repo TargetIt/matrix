@@ -692,22 +692,121 @@ As[0] = {5, 8, 9, 5}  ← 一次 float4 加载 (GMEM → SMEM)
 
 ### 8.1 核心思想
 
-一个 Block 内的线程进一步按 Warp 组织，在 block tiling 和 thread tiling 之间增加一层 **warp tiling**。原文强调：warp 不是 CUDA C 代码里显式出现的普通对象，而是硬件调度单位；每个 warp 有 32 个线程，会被 warp scheduler 作为一组来发射和调度。
+一句话先说透：**Warp Tiling 是在“一个 block 负责一大块 C”和“一个 thread 负责一小块 C”之间，再插入一层“一个 warp 负责一块中等大小的 C”。**
 
-这一层的目的不是引入某个单一指令技巧，而是把并行层级说清楚并组织得更适合硬件：
+没有 Warp Tiling 时，代码的层级大致是：
 
-- block 级别：不同 block 分配到不同 SM。
-- warp 级别：同一 block 内的不同 warp 可以在不同 warp scheduler 上并行推进，也可以在同一 scheduler 上交错推进。
-- thread tile 级别：每个线程维护自己的寄存器 accumulator，提供有限但重要的 ILP。
-- 内存访问级别：SMEM bank conflict 发生在同一 warp 内，warp tiling 可以让共享内存访问和寄存器复用更规则。
+```
+Block Tile 负责一大块 C
+└── Thread Tile 直接从这块 C 里分一小块给每个 thread
+```
 
-**策略**：
-1. 将 Block 的工作按 Warp Tile 划分
-2. 每个 Warp 负责 C 的一个子区域
-3. Warp 内线程从共享内存加载自己的 register fragments
-4. 通过更规则的 warp/thread 层级，提高调度效率、降低 bank conflict 风险，并改善寄存器缓存局部性
+有 Warp Tiling 后，层级变成：
+
+```
+Block Tile 负责一大块 C
+└── Warp Tile 先把大块 C 分给几个 warp
+    └── Thread Tile 再把每个 warp 的中块 C 分给 warp 内 thread
+```
+
+从生活角度理解：没有 Warp Tiling，像是一个车间主任直接给每个工人分活。工人很多时，活虽然能分下去，但“哪一组人一起干哪一片区域、哪一组人会同时访问哪一排货架、哪一组人该被哪个调度器安排”都不够清楚。有了 Warp Tiling，就像车间主任先把任务分给几个班组，每个班组负责一片区域，班组内部再分给个人。GPU 的 warp 正是硬件真正按组调度的“班组”，所以这样组织更贴近机器实际执行方式。
+
+原文强调：warp 不是 CUDA C 代码里显式出现的普通对象，而是硬件调度单位。每个 warp 固定 32 个线程，会被 SM 里的 warp scheduler 成组发射和调度。A6000 这类 GPU 一个 SM 内有多个 warp scheduler，因此把 block 内工作明确切成 warp tile，可以让“谁和谁一起调度、谁和谁可能发生 shared memory bank conflict、谁复用哪一片寄存器数据”变得更规则。
+
+### 8.1.1 没有 Warp Tiling 会怎样？
+
+没有 Warp Tiling，并不是算不出来；K5/K6 已经能算，而且性能也很高。问题是层级还不够贴近硬件。
+
+宽泛地看，没有 Warp Tiling 时会有这些特点：
+
+| 维度 | 没有 Warp Tiling |
+|------|------------------|
+| 任务划分 | block 直接分给 thread，缺少 warp 这一层中间组织 |
+| 调度视角 | 硬件按 warp 调度，但代码主要按 thread tile 思考 |
+| SMEM 访问 | 能复用，但访问模式不一定按 warp 边界整理得最规整 |
+| bank conflict 分析 | bank conflict 发生在同一 warp 内，但代码结构没有显式围绕 warp 组织 |
+| 寄存器局部性 | 每个 thread 有 accumulator，但 warp 内哪些 thread 共同消费哪片数据不够清晰 |
+| 后续 Tensor Core 映射 | 还没自然落到 warp-wide matrix instruction 的形状 |
+
+伪代码可以理解成这样：
+
+```cuda
+// 没有 Warp Tiling：block tile 下面直接是 thread tile
+for each block_tile of C:
+    load A_block_tile, B_block_tile into shared memory
+
+    for dotIdx in BK:
+        // 每个 thread 直接计算自己的 TM×TN 小块
+        for tm in 0..TM:
+            for tn in 0..TN:
+                C_thread[tm][tn] +=
+                    As[thread_row + tm][dotIdx] *
+                    Bs[dotIdx][thread_col + tn]
+```
+
+这段代码的问题不是“数学错”，而是“组织太扁平”：block 很大，thread 很小，中间缺了 GPU 实际调度最关心的 warp。好比一个公司只有总经理和员工，没有小组长；事情能推进，但管理颗粒度和实际协作单位不匹配。
+
+### 8.1.2 有了 Warp Tiling 会怎样？
+
+有 Warp Tiling 后，一个 block 的输出区域先被分成多个 warp tile。每个 warp 负责自己的中等区域；warp 内线程再分别负责更小的 thread tile。
+
+宽泛地看，有 Warp Tiling 后会变成：
+
+| 维度 | 有 Warp Tiling |
+|------|----------------|
+| 任务划分 | block → warp tile → thread tile，层级更完整 |
+| 调度视角 | 代码结构显式对应 warp scheduler 的调度单位 |
+| SMEM 访问 | 每个 warp 读取自己负责区域需要的 A/B fragment，访问更规则 |
+| bank conflict 分析 | 因为冲突只发生在同一 warp 内，所以按 warp 组织更容易控制 |
+| 寄存器局部性 | warp 内线程围绕同一块 C 工作，更容易形成 register cache locality |
+| 后续 Tensor Core 映射 | warp tile 形状更接近 WMMA / Tensor Core 的 warp-wide matrix instruction |
+
+伪代码会多出一层 `warp`：
+
+```cuda
+// 有 Warp Tiling：block tile 中间再切成 warp tile
+for each block_tile of C:
+    load A_block_tile, B_block_tile into shared memory
+
+    for each warp_tile inside block_tile:
+        warpRow = warpId / warps_per_row
+        warpCol = warpId % warps_per_row
+
+        for dotIdx in BK:
+            // 1. warp 内每个 thread 先从 SMEM 取自己那份 A/B 到寄存器
+            for wSubRow in 0..WMITER:
+                regM[...] = As[warpRow, wSubRow, threadRowInWarp, dotIdx]
+
+            for wSubCol in 0..WNITER:
+                regN[...] = Bs[warpCol, wSubCol, threadColInWarp, dotIdx]
+
+            // 2. 对这个 warp tile 做一组小矩阵乘加
+            for wSubRow in 0..WMITER:
+                for wSubCol in 0..WNITER:
+                    for tm in 0..TM:
+                        for tn in 0..TN:
+                            C_warp_thread[...] += regM[...] * regN[...]
+```
+
+这就是原文代码中 `regM`、`regN`、`WMITER`、`WNITER` 这几个变量的意义：它们不是为了改变矩阵乘法公式，而是为了把“一个 warp 负责哪块 C、warp 内线程各拿哪片 A/B、这些片段怎样在寄存器里复用”表达清楚。
+
+### 8.1.3 多维度对比总结
+
+| 对比项 | 没有 Warp Tiling | 有 Warp Tiling |
+|--------|------------------|----------------|
+| 数学计算量 | 不变，仍是 `2*M*N*K` FLOPs | 不变，仍是同样 FLOPs |
+| GMEM 数据量 | 大体不因此改变 | 大体不因此改变 |
+| 主要收益 | 已有 block/thread tile 复用，但层级较粗 | 更贴合 warp 调度、SMEM 访问和寄存器复用 |
+| 代码复杂度 | 较低 | 明显更高，要维护 warpId、warpRow、warpCol、threadRowInWarp |
+| 可解释层级 | block → thread | block → warp → thread |
+| 硬件贴合度 | thread 逻辑强，warp 逻辑弱 | 显式围绕 warp 组织 |
+| 性能影响 | 原文 Kernel 6 已达 78.4% cuBLAS | 原文 Kernel 10 达 93.7% cuBLAS |
+
+因此，Warp Tiling 的核心收益不是“少算了多少乘加”，也不是“突然少读了多少全局内存”，而是**把同样的数学工作排成更适合 GPU 执行的队形**。它让 block、warp、thread 三层并行都显式出现：block 分给 SM，warp 分给 warp scheduler，thread tile 提供寄存器 accumulator 和少量 ILP。
 
 ### 8.2 Demo 配置
+
+为了让图能看懂，demo 把真实 CUDA 的 32-thread warp 缩小成“逻辑 warp tile”来展示。你阅读这里时要抓住结构关系，而不是把数字当成真实 CUDA warp 的线程数。
 
 | 参数 | 值 | 含义 |
 |------|-----|------|
@@ -721,21 +820,40 @@ As[0] = {5, 8, 9, 5}  ← 一次 float4 加载 (GMEM → SMEM)
 | TM | 4 | 每线程计算的行数 |
 | TN | 4 | 每线程计算的列数 |
 
-Warp 区域 = `WMIter * TM × WNIter * TN = 8 × 8` = 整个 Block
+在这个缩小 demo 里，一个 block 覆盖 `8×8` 的 C。为了展示 warp tiling，我们把这个 block 里的输出区域切成 4 个 `4×4` 的逻辑 warp tile：
+
+```
+没有 Warp Tiling 的看法:
+
+Block C[0:8,0:8]
+└── 4 个逻辑 thread tile，各管一个 4×4
+
+有 Warp Tiling 的看法:
+
+Block C[0:8,0:8]
+├── Warp Tile (0,0): C[0:4,0:4]
+├── Warp Tile (0,1): C[0:4,4:8]
+├── Warp Tile (1,0): C[4:8,0:4]
+└── Warp Tile (1,1): C[4:8,4:8]
+```
+
+真实大规模 kernel 中，warp tile 内还有 32 个真实线程继续分工；demo 为了讲清楚层级，只保留了“block 先分成 warp tile，再分给 thread tile”的形状。
 
 ```
 矩阵 C (16×16, GMEM)
 └── Grid: 2×2 = 4 blocks (gridDim=(2,2), 16/8=2)
     └── Block: BM=8, BN=8, BK=4 (blockDim 取决于 warp 展开方式)
-        ├── 每 block: WM_ITER=2 × WN_ITER=2 = 4 个 warp-tile
+        ├── 每 block: 4 个逻辑 warp tile
         ├── [GMEM→SMEM] As[8×4] + Bs[4×8] = 64 floats (256 bytes) per K-step
         ├── K 迭代: 16/4 = 4 steps, double-buffered
-        ├── Warp Tile: WM=4, WN=4 (demo 中用逻辑 warp-tile 展示 4×4 子区域)
+        ├── Warp Tile: WM=4, WN=4 (每个逻辑 warp tile 负责 4×4 子区域)
         │   └── Thread Tile: TM=4, TN=4 (每线程 4×4=16 元素)
         └── 说明: 真实 CUDA warp 固定为 32 threads；demo 为了可视化，只画出 4 个逻辑计算 tile
 ```
 
 ### 8.3 Warp 工作划分 (Block 0,0)
+
+下面这张图只回答一个问题：**有了 Warp Tiling 之后，Block(0,0) 这块 `8×8` 的 C，先被分给哪几个 warp tile？**
 
 ```
 Block (0,0) 覆盖 C[0:8, 0:8]:
@@ -758,13 +876,19 @@ Block (0,0) 覆盖 C[0:8, 0:8]:
 └───────────────────────┴───────────────────────┘
 ```
 
-这里画的是 4 个"逻辑计算 tile"，用于解释 warp tile 如何覆盖 block 的 C 区域。真实 CUDA kernel 中 warp 仍然是 32 个线程，线程之间的具体分工比 demo 图更细；demo 不应该被理解成“一个 warp 只有 4 个线程”。
+这里画的是 4 个"逻辑 warp tile"，用于解释 warp tile 如何覆盖 block 的 C 区域。真实 CUDA kernel 中 warp 仍然是 32 个线程，线程之间的具体分工比 demo 图更细；demo 不应该被理解成“一个 warp 只有 4 个线程”。
 
 ### 8.4 从第一性原理分析
 
 **为什么 Warp tiling 有效？** 原文的重点是增加一个与硬件调度一致的层级。没有 warptiling 时，我们只有 block tile 和 thread tile 两层；加入 warptiling 后，block 内的工作被分配给多个 warp tile，warp scheduler、SMEM bank conflict 范围、寄存器缓存局部性都能被更明确地利用。
 
 在这一路径里，数据仍然会经历 GMEM → SMEM → RF，warp 内线程从共享内存加载各自的 register fragments，再执行寄存器里的 FMA。更准确的说法是：warptiling 让每个 warp 负责的输出区域、SMEM 读取模式和寄存器复用模式更清晰，最终更接近 cuBLAS 的手写层级组织。原始文章达到 21.8 TFLOPs（93.7% of cuBLAS）。
+
+可以把它压缩成三句话：
+
+1. **没有 Warp Tiling**：代码知道 block 和 thread，但没有把 warp 这个硬件调度单位显式放进计算结构里。
+2. **有了 Warp Tiling**：block 先分给 warp，warp 再分给 thread，任务队形和硬件调度队形一致。
+3. **收益来源**：计算量不变，数据量大体不变，但调度、SMEM 访问、寄存器片段复用、未来映射到 Tensor Core 的形状都更规整。
 
 > **Vulkan 联想备注：Cooperative Matrix**
 >
