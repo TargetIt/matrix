@@ -26,6 +26,29 @@
 
 “电脑可运行”不等于“任何电脑都能快速完成”：大模型训练、RTL 仿真和设计空间搜索可能需要数小时，某些 Docker 镜像及 FPGA 工具只支持 x86_64 Linux。
 
+## 快速直达索引
+
+以下入口按“源码/实验”和“文档/课程页”拆开，项目名称、Notebook、安装说明和最终提交均可直接点击。GitHub 活跃度的完整证据见[维护状态与来源核验](#维护状态与来源核验)。
+
+| 项目 | 源码 / 实验直达 | 文档 / 课程直达 |
+| --- | --- | --- |
+| Zero to Hero | [源码与全部 Notebook](https://github.com/karpathy/nn-zero-to-hero) | [仓库课程目录](https://github.com/karpathy/nn-zero-to-hero#neural-networks-zero-to-hero) |
+| Stanford CS231n | [A1 starter code（ZIP）](https://cs231n.github.io/assignments/2026/assignment1.zip) · [A2 starter code（ZIP）](https://cs231n.github.io/assignments/2026/assignment2.zip) | [A1 说明](https://cs231n.github.io/assignments2025/assignment1/) · [A2 说明](https://cs231n.github.io/assignments2025/assignment2/) |
+| MIT 6.5940 | [Lab 0](https://colab.research.google.com/drive/1gvxq7mIAeIBAtmLKH1Q1GknA-GRsK7Q6) · [Lab 1](https://colab.research.google.com/drive/1Fagq3JQBzCizodyxpHKvWDzfCC7F1RWN) · [Lab 2](https://colab.research.google.com/drive/11IBla1q1McoZ2oCANCGHns8VtzG5nCMP) · [Lab 3](https://colab.research.google.com/drive/1xKReLBHVS6bkFbYkfi-Ky3C4loQmG6Yc) · [Lab 4](https://colab.research.google.com/drive/16H9RvSg4XIF35X3fLGQUVwAE9ccvDj14) | [Fall 2024 课程页](https://hanlab.mit.edu/courses/2024-fall-65940) · [Fall 2026 课程页](https://hanlab.mit.edu/courses/2026-fall-65940) |
+| Stanford CS336 | [A1 Basics](https://github.com/stanford-cs336/assignment1-basics) · [A2 Systems](https://github.com/stanford-cs336/assignment2-systems) · [A3 Scaling](https://github.com/stanford-cs336/assignment3-scaling) · [A4 Data](https://github.com/stanford-cs336/assignment4-data) · [A5 Alignment](https://github.com/stanford-cs336/assignment5-alignment) | [课程主页](https://cs336.stanford.edu/) |
+| MLC.ai | [全部 Notebook](https://github.com/mlc-ai/notebooks) · [TensorIR](https://github.com/mlc-ai/notebooks/blob/main/3_TensorIR_Tensor_Program_Abstraction_Case_Study_Action.ipynb) · [GPU/专用硬件](https://github.com/mlc-ai/notebooks/blob/main/7_GPU_and_Specialized_Hardware.ipynb) · [Tensor Core](https://github.com/mlc-ai/notebooks/blob/main/tutorial/tutorial_tensor_core.ipynb) | [MLC 课程主页](https://mlc.ai/) |
+| SCALE-Sim | [源码](https://github.com/scalesim-project/SCALE-Sim) · [配置示例](https://github.com/scalesim-project/SCALE-Sim/tree/main/configs) | [安装与用法](https://github.com/scalesim-project/SCALE-Sim#installation) |
+| Timeloop/Accelergy | [练习源码](https://github.com/Accelergy-Project/timeloop-accelergy-exercises) · [Eyeriss-like](https://github.com/Accelergy-Project/timeloop-accelergy-exercises/tree/master/workspace/example_designs/example_designs/eyeriss_like) · [Vision Transformer shapes](https://github.com/Accelergy-Project/timeloop-accelergy-exercises/tree/master/workspace/example_designs/layer_shapes/vision_transformer) | [官方教程](http://accelergy.mit.edu/tutorial.html) · [Timeloop 安装](https://timeloop.csail.mit.edu/installation) |
+| hls4ml | [教程源码](https://github.com/fastmachinelearning/hls4ml-tutorial) · [Keras 入门](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/1_getting_started/1a_train_keras.ipynb) · [HLS 综合](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/1_getting_started/1c_hls4ml_synth.ipynb) · [量化](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/2_quantization/2a_qkeras.ipynb) | [Binder](https://mybinder.org/v2/gh/fastmachinelearning/hls4ml-tutorial/HEAD) |
+| FINN | [源码](https://github.com/Xilinx/finn) · [教程 Notebook](https://github.com/Xilinx/finn/tree/main/notebooks) | [文档](https://finn.readthedocs.io/) · [Getting Started](https://finn.readthedocs.io/en/latest/getting_started.html) |
+| CFU-Playground | [源码与实验](https://github.com/google/CFU-Playground) | [Setup Guide](https://cfu-playground.readthedocs.io/en/latest/setup-guide.html) · [文档主页](https://cfu-playground.readthedocs.io/) |
+| Gemmini | [源码](https://github.com/ucb-bar/gemmini) | [Chipyard 文档](https://chipyard.readthedocs.io/en/latest/Generators/Gemmini.html) · [MLSys 2022 教程](https://sites.google.com/berkeley.edu/gemmini-tutorial-mlsys-2022) |
+| Stanford EE292D | [Lab 源码](https://github.com/ee292d/labs) | [仓库实验说明](https://github.com/ee292d/labs#readme) |
+| Harvard TinyMLx | [课程材料](https://github.com/tinyMLx/courseware) · [Colab](https://github.com/tinyMLx/colabs) · [Arduino library](https://github.com/tinyMLx/arduino-library) | [课程材料说明](https://github.com/tinyMLx/courseware#readme) |
+| Jetson Hello AI World | [源码与教程](https://github.com/dusty-nv/jetson-inference) | [Jetson AI Lab](https://www.jetson-ai-lab.com/) |
+| FINN Examples | [源码、Notebook 与 bitstream](https://github.com/Xilinx/finn-examples) | [使用说明](https://github.com/Xilinx/finn-examples#readme) |
+| TFLite Micro / MLPerf Tiny | [TFLite Micro](https://github.com/tensorflow/tflite-micro) · [MLPerf Tiny](https://github.com/mlcommons/tiny) | [TFLM Getting Started](https://github.com/tensorflow/tflite-micro/blob/main/README.md) · [MLPerf Tiny 说明](https://github.com/mlcommons/tiny#readme) |
+
 ## 第一组：无需开发板
 
 ### 总表
@@ -44,7 +67,9 @@
 | 10 | [CFU-Playground Simulator](https://github.com/google/CFU-Playground) | 为 RISC-V 软核添加 ML 自定义指令，优化 TFLM kernel | Renode 或 Verilator | Linux 环境；Renode 快、Verilator 更精确但慢 | 高级 |
 | 11 | [Gemmini](https://github.com/ucb-bar/gemmini) | systolic array、RoCC、自定义 ISA、scratchpad/DMA、软硬件栈 | Spike 或 Verilator | Ubuntu x86_64、Chipyard；编译和仿真较重 | 高级 |
 
-### 1. Karpathy — Neural Networks: Zero to Hero
+### 1. [Karpathy — Neural Networks: Zero to Hero](https://github.com/karpathy/nn-zero-to-hero)
+
+直达：[源码与 Notebook](https://github.com/karpathy/nn-zero-to-hero) · [最后提交 `73c3fcc7`](https://github.com/karpathy/nn-zero-to-hero/commit/73c3fcc741f0ec104ca850b1fb0df90e7e8d4cde)
 
 推荐作为第一套实验。它不是只调用框架 API，而是从标量 autograd 和反向传播开始，逐步实现字符语言模型、MLP、BatchNorm、手写反向传播、WaveNet 风格网络，最后构造 GPT。Notebook、练习和视频互相对应。
 
@@ -57,7 +82,11 @@
 
 局限：它主要建立模型直觉，不涉及硬件性能建模；仓库最近代码更新为 2024，但内容仍是很好的基础。
 
-### 2. Stanford CS231n 2025 Assignments
+### 2. [Stanford CS231n 2025 Assignments](https://cs231n.github.io/assignments2025/assignment1/)
+
+直达：[A1 说明](https://cs231n.github.io/assignments2025/assignment1/) · [A1 starter code](https://cs231n.github.io/assignments/2026/assignment1.zip) · [A2 说明](https://cs231n.github.io/assignments2025/assignment2/) · [A2 starter code](https://cs231n.github.io/assignments/2026/assignment2.zip)
+
+说明：官方 `assignments2025` 页面截至本次核验已把 starter-code 下载入口更新为 `/assignments/2026/` 下的 ZIP；上面同时保留说明页和当前实际下载地址，避免只看 URL 年份造成误判。
 
 Assignment 1 用 NumPy 实现 Softmax、两层网络和全连接网络；Assignment 2 覆盖 BatchNorm、LayerNorm、Dropout、卷积、PyTorch、RNN 图像描述。官方工作流使用 Colab，适合在购买硬件前建立张量形状、梯度和算子成本意识。
 
@@ -69,7 +98,7 @@ Assignment 1 用 NumPy 实现 Softmax、两层网络和全连接网络；Assignm
 
 课程页说明本地环境不是官方主要支持方式，因此当前 Mac 上优先使用 Colab。
 
-### 3. MIT 6.5940 — TinyML and Efficient Deep Learning Computing
+### 3. [MIT 6.5940 — TinyML and Efficient Deep Learning Computing](https://hanlab.mit.edu/courses/2024-fall-65940)
 
 Fall 2024 课程页公开了 5 个 Colab Lab，主题覆盖剪枝、量化、神经架构搜索、LLM 压缩和在笔记本电脑上部署 LLM。这是从“模型学习”进入“高效 AI/NPU”最短的一座桥。
 
@@ -83,7 +112,9 @@ Fall 2024 课程页公开了 5 个 Colab Lab，主题覆盖剪枝、量化、神
 
 MIT Fall 2026 页面已经列出新一轮 Lab 计划，但截至调研日链接尚未全部公开，因此当前应使用可直接访问的 2024 Colab，而不是等待未发布材料。
 
-### 4. Stanford CS336 — Language Modeling from Scratch
+### 4. [Stanford CS336 — Language Modeling from Scratch](https://cs336.stanford.edu/)
+
+直达：[课程主页](https://cs336.stanford.edu/) · [A1 最后提交 `a158843b`](https://github.com/stanford-cs336/assignment1-basics/commit/a158843b20107949f1a8d7df1b05cd33b9166712)
 
 这是进阶 Transformer 主线。2026 公开仓库包括：
 
@@ -95,7 +126,9 @@ MIT Fall 2026 页面已经列出新一轮 Lab 计划，但截至调研日链接�
 
 不要把五个作业都列为“Mac 可直接完成”。推荐当前机器只从 Assignment 1 的 tokenizer、模型实现、单元测试和 TinyStories 小规模训练开始；Assignment 2 以后按需使用云端 NVIDIA GPU。
 
-### 5. MLC.ai — Machine Learning Compilation
+### 5. [MLC.ai — Machine Learning Compilation](https://github.com/mlc-ai/notebooks)
+
+直达：[全部 Notebook](https://github.com/mlc-ai/notebooks) · [TensorIR](https://github.com/mlc-ai/notebooks/blob/main/3_TensorIR_Tensor_Program_Abstraction_Case_Study_Action.ipynb) · [GPU/专用硬件](https://github.com/mlc-ai/notebooks/blob/main/7_GPU_and_Specialized_Hardware.ipynb) · [Tensor Core](https://github.com/mlc-ai/notebooks/blob/main/tutorial/tutorial_tensor_core.ipynb)
 
 官方 Notebook 依次覆盖 Tensor Program 抽象、TensorIR、端到端模型、自动程序优化、框架集成、GPU/专用硬件和计算图优化，并包含 tensor core 教程。它回答的是“框架中的算子怎样被降级、调度并映射到硬件”，比一般模型部署教程更接近 NPU 编译器。
 
@@ -107,7 +140,9 @@ MIT Fall 2026 页面已经列出新一轮 Lab 计划，但截至调研日链接�
 
 CPU 章节可在当前 Mac 上尝试；CUDA/tensor core 章节应转到 NVIDIA 环境。
 
-### 6. SCALE-Sim v3
+### 6. [SCALE-Sim v3](https://github.com/scalesim-project/SCALE-Sim)
+
+直达：[源码](https://github.com/scalesim-project/SCALE-Sim) · [配置示例](https://github.com/scalesim-project/SCALE-Sim/tree/main/configs) · [最后提交 `9f98c437`](https://github.com/scalesim-project/SCALE-Sim/commit/9f98c4371055a54c75209c2e02b640b897550532)
 
 这是最适合第一步学习 AI 加速器的纯软件模拟器。它用 Python 模拟 systolic array，支持卷积、全连接及 Attention 等 GEMM 工作负载，并可改变阵列大小、dataflow、SRAM、带宽、多核配置和稀疏性。
 
@@ -118,9 +153,11 @@ CPU 章节可在当前 Mac 上尝试；CUDA/tensor core 章节应转到 NVIDIA �
 3. 扫描 SRAM 和片外带宽，找出 compute-bound 与 memory-bound 的分界。
 4. 输入 Transformer 的 Q/K/V、attention score 和 FFN GEMM，比较长序列下利用率。
 
-仓库在 2026 年仍更新，是本报告中最推荐的“电脑直接运行的 NPU Lab”。
+默认分支最近提交为 2025-12-17，仍在一年活跃窗口内，是本报告中最推荐的“电脑直接运行的 NPU Lab”。
 
-### 7. Timeloop / Accelergy Exercises
+### 7. [Timeloop / Accelergy Exercises](https://github.com/Accelergy-Project/timeloop-accelergy-exercises)
+
+直达：[练习源码](https://github.com/Accelergy-Project/timeloop-accelergy-exercises) · [Eyeriss-like](https://github.com/Accelergy-Project/timeloop-accelergy-exercises/tree/master/workspace/example_designs/example_designs/eyeriss_like) · [Vision Transformer shapes](https://github.com/Accelergy-Project/timeloop-accelergy-exercises/tree/master/workspace/example_designs/layer_shapes/vision_transformer) · [安装](https://timeloop.csail.mit.edu/installation)
 
 这套官方练习用 Docker 启动 Jupyter，研究 mapping、数据复用、层级存储访问和能耗。示例包括 Eyeriss-like、Simba-like、output/weight-stationary、sparse tensor core，并已包含 Vision Transformer layer shapes。
 
@@ -128,7 +165,9 @@ CPU 章节可在当前 Mac 上尝试；CUDA/tensor core 章节应转到 NVIDIA �
 
 当前电脑为 arm64；官方 Docker/依赖的最稳妥环境仍是 Ubuntu x86_64。可用云 VM 或独立 Linux 主机，避免先在 macOS 上处理交叉架构兼容问题。
 
-### 8. hls4ml Tutorial
+### 8. [hls4ml Tutorial](https://github.com/fastmachinelearning/hls4ml-tutorial)
+
+直达：[教程源码](https://github.com/fastmachinelearning/hls4ml-tutorial) · [Keras 入门](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/1_getting_started/1a_train_keras.ipynb) · [HLS 综合](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/1_getting_started/1c_hls4ml_synth.ipynb) · [量化](https://github.com/fastmachinelearning/hls4ml-tutorial/blob/main/2_quantization/2a_qkeras.ipynb) · [Binder](https://mybinder.org/v2/gh/fastmachinelearning/hls4ml-tutorial/HEAD) · [最后提交 `3069ac8d`](https://github.com/fastmachinelearning/hls4ml-tutorial/commit/3069ac8d20a5d384613587ad64adef931f4be654)
 
 教程 Notebook 从 Keras/PyTorch 训练开始，继续到 HLS 转换与综合，并覆盖 QKeras、Brevitas、reuse factor、profiling、量化 CNN 和 SNN。无需开发板也能完成模型训练、量化和部分转换；要得到真实综合后的 latency/resource 报告，需要安装 AMD Vitis HLS。
 
@@ -140,13 +179,17 @@ CPU 章节可在当前 Mac 上尝试；CUDA/tensor core 章节应转到 NVIDIA �
 
 Binder 可打开 Notebook，但综合工具不会由 Binder 提供。Apple Silicon 不是 Vitis HLS 的标准平台，建议使用 x86_64 Linux。
 
-### 9. FINN Tutorials
+### 9. [FINN Tutorials](https://github.com/Xilinx/finn/tree/main/notebooks)
+
+直达：[源码](https://github.com/Xilinx/finn) · [教程 Notebook](https://github.com/Xilinx/finn/tree/main/notebooks) · [Getting Started](https://finn.readthedocs.io/en/latest/getting_started.html) · [最后提交 `39f0c9a6`](https://github.com/Xilinx/finn/commit/39f0c9a6b7675f62d47390fbf9a591707bcbac9b)
 
 FINN 专门面向低比特量化神经网络的 FPGA dataflow accelerator。官方只支持 Docker 执行编译器，并提供从 Brevitas/QONNX 到 dataflow partition、streamlining、折叠参数和硬件生成的 Jupyter 教程。
 
 无需板卡时可以学习 ONNX 图变换、量化数据类型、每层 PE/SIMD 折叠和吞吐估计。只有在实际部署或验证 bitstream 时才需要 FPGA。完整 synthesis 通常还需要 Vivado，因此本地软件阶段与硬件阶段要分开规划。
 
-### 10. CFU-Playground：先仿真、后上板
+### 10. [CFU-Playground：先仿真、后上板](https://github.com/google/CFU-Playground)
+
+直达：[源码与实验](https://github.com/google/CFU-Playground) · [Setup Guide](https://cfu-playground.readthedocs.io/en/latest/setup-guide.html) · [最后提交 `7f8ec414`](https://github.com/google/CFU-Playground/commit/7f8ec4147b39db98534f8a10f9ddb1c26aca5648)
 
 CFU-Playground 的教学目标很清楚：给 RISC-V 软核增加 Custom Function Unit，修改 TFLite Micro kernel 使用新指令，再比较每层 cycle count。它是少见的可以先用 Renode/Verilator、之后用同一工程上 FPGA 的连续 Lab。
 
@@ -155,7 +198,9 @@ CFU-Playground 的教学目标很清楚：给 RISC-V 软核增加 Custom Functio
 
 项目 README 也提醒这是探索型框架，文档和构建偶尔可能破损。它适合作为高级项目，不应放在入门第一周。
 
-### 11. Gemmini
+### 11. [Gemmini](https://github.com/ucb-bar/gemmini)
+
+直达：[源码](https://github.com/ucb-bar/gemmini) · [Chipyard 文档](https://chipyard.readthedocs.io/en/latest/Generators/Gemmini.html) · [MLSys 教程](https://sites.google.com/berkeley.edu/gemmini-tutorial-mlsys-2022) · [最后提交 `8c3f9923`](https://github.com/ucb-bar/gemmini/commit/8c3f9923a44a2fe2c7930587be297d6d4f8c09ca)
 
 Gemmini 是 Berkeley Chipyard 生态中的完整 DNN accelerator：Chisel RTL、RoCC 自定义指令、systolic array、scratchpad、accumulator、DMA、软件库和 DNN workload 全部开放。
 
@@ -174,13 +219,17 @@ Gemmini 是 Berkeley Chipyard 生态中的完整 DNN accelerator：Chisel RTL、
 | 5 | [CFU-Playground](https://github.com/google/CFU-Playground) | Arty A7-35T/100T 等 LiteX 板 | 自定义指令、TFLM kernel、cycle 对比 | 先仿真后上板，软硬件协同最完整 |
 | 6 | [TFLite Micro Examples](https://github.com/tensorflow/tflite-micro) + [MLPerf Tiny](https://github.com/mlcommons/tiny) | Arduino、ESP、Coral Dev Board Micro 或厂商 MCU/DSP | 模型移植、内存占用、标准 benchmark | 更像参考工程/基准套件，不是连续课程 |
 
-### 1. Raspberry Pi 5：继续 EE292D
+### 1. [Raspberry Pi 5：继续 EE292D](https://github.com/ee292d/labs)
+
+直达：[Lab 源码与说明](https://github.com/ee292d/labs) · [最后提交 `c0a07801`](https://github.com/ee292d/labs/commit/c0a078015c9175a089c43f94441e65aa5167af25)
 
 已经发现的 EE292D 是最适合第一块板的课程：Lab 1–6 覆盖本地 LLM、图像分类、目标/人体定位、Whisper、翻译和 LLM 微调。它主要训练 Linux 边缘设备上的模型部署与优化，不会深入自定义 NPU RTL。
 
 推荐扩展作业：对每个模型记录 CPU 占用、峰值内存、模型大小、首 token 延迟、tokens/s 和功耗；再比较 FP32、FP16、INT8 或不同推理后端。
 
-### 2. Arduino / MCU：Harvard TinyMLx
+### 2. [Arduino / MCU：Harvard TinyMLx](https://github.com/tinyMLx/courseware)
+
+直达：[课程材料](https://github.com/tinyMLx/courseware) · [Colab](https://github.com/tinyMLx/colabs) · [Arduino library](https://github.com/tinyMLx/arduino-library) · [Colab 最后提交 `f881acc6`](https://github.com/tinyMLx/colabs/commit/f881acc69ec2bf194a03f1a3ae5492910e752c3d)
 
 TinyMLx 提供课程 syllabus、assignments/labs、代码 walkthrough、Colab 和 Arduino library。公开 Colab 从第一个神经网络、卷积、Fashion-MNIST，延伸到 TFLite Converter、PTQ/QAT、关键词识别、autoencoder、摄像头和自定义手势。
 
@@ -191,23 +240,29 @@ TinyMLx 提供课程 syllabus、assignments/labs、代码 walkthrough、Colab �
 
 购买前需核实课程所用 Shield、摄像头和 Arduino 板版本的兼容性，不要只按“Nano 33”名称购买。
 
-### 3. Jetson：Hello AI World 与 Jetson AI Lab
+### 3. [Jetson：Hello AI World 与 Jetson AI Lab](https://github.com/dusty-nv/jetson-inference)
+
+直达：[Hello AI World 源码与教程](https://github.com/dusty-nv/jetson-inference) · [Jetson AI Lab](https://www.jetson-ai-lab.com/) · [最后提交 `45da40a8`](https://github.com/dusty-nv/jetson-inference/commit/45da40a8f3c180191b269f57f736caaa025b8a69)
 
 `jetson-inference` 是结构化 instructional guide，包含 TensorRT 推理、PyTorch transfer learning、摄像头数据采集、分类、检测、分割和姿态估计。若重点转向 Transformer，可继续 Jetson AI Lab 的 ViT、VLM 和本地 LLM 教程。
 
 新购硬件优先考虑 Jetson Orin Nano，而不是较老的 Jetson Nano；仓库明确支持 Orin/JetPack 6。Jetson 学到的是 GPU/TensorRT 边缘栈，不是独立 NPU 微架构。
 
-### 4. FPGA：FINN Examples
+### 4. [FPGA：FINN Examples](https://github.com/Xilinx/finn-examples)
+
+直达：[源码、Notebook 与 bitstream](https://github.com/Xilinx/finn-examples) · [最后提交 `810a1e77`](https://github.com/Xilinx/finn-examples/commit/810a1e7759163ac313cb7739743da4184fb9135d)
 
 官方提供预构建 bitstream、PYNQ Python driver 和 Jupyter Notebook，示例包括 MNIST MLP、CIFAR-10 CNV、语音命令和网络入侵检测等低比特模型。
 
 已正式提供 bitstream 的边缘板主要是 Pynq-Z1、Ultra96 和 ZCU104；README 特别说明 Pynq-Z2 可手工适配，但不是预构建示例的正式测试目标。若只是学习，不应因为 Pynq-Z2 更常见就假设所有 Notebook 可直接运行。
 
-### 5. FPGA 自定义指令：CFU-Playground
+### 5. [FPGA 自定义指令：CFU-Playground](https://github.com/google/CFU-Playground)
 
 推荐先完成仿真版，再购买 Arty A7。上板后的核心实验是比较修改前后的 TFLM layer cycles，而不是只证明 bitstream 能启动。Arty A7-35T/100T 文档和社区经验相对多，是比稀有 LiteX 板更稳妥的选择。
 
-### 6. MCU 基准：TFLite Micro 与 MLPerf Tiny
+### 6. [MCU 基准：TFLite Micro](https://github.com/tensorflow/tflite-micro) 与 [MLPerf Tiny](https://github.com/mlcommons/tiny)
+
+直达：[TFLite Micro 示例](https://github.com/tensorflow/tflite-micro/tree/main/tensorflow/lite/micro/examples) · [TFLM 最后提交 `f59d9879`](https://github.com/tensorflow/tflite-micro/commit/f59d98795086b522d7d53f683a0df3ee704afc18) · [MLPerf Tiny 最后提交 `4addd0fa`](https://github.com/mlcommons/tiny/commit/4addd0fa08d216e20637637874e084895f289da4)
 
 TFLite Micro 官方仓库列出 Arduino、Coral Dev Board Micro、Espressif、Renesas、Silicon Labs、TI 等社区支持示例，并带 Renode 软件仿真说明。MLPerf Tiny 提供代表性的 image classification、keyword spotting、visual wake words 和 anomaly detection benchmark。
 
@@ -244,42 +299,53 @@ TFLite Micro 官方仓库列出 Arduino、Coral Dev Board Micro、Espressif、Re
 ## 不建议当前作为主线的材料
 
 - [Xilinx DPU-PYNQ](https://github.com/Xilinx/DPU-PYNQ)：仓库已归档，适合查旧工程，不适合作为新学习路线。
-- [pulp-platform/pulp-training](https://github.com/pulp-platform/pulp-training)：仓库已归档且更新停在 2023，除非明确研究 PULP 历史工具链。
+- [pulp-platform/pulp-training](https://github.com/pulp-platform/pulp-training)：仓库已归档，默认分支最后提交停在 2019-10-22；除非明确研究 PULP 历史工具链。
 - TVM VTA 老教程：当前 Apache TVM `main` 已不再保留旧 VTA 目录，网络上的 PYNQ/DE10-Nano 教程容易与现行 TVM 不兼容。
 - Cornell ECE5545 的若干学生作业镜像：内容有参考价值，但不是官方统一维护的 Lab 发布源，复现性弱于本报告的主清单。
 - MIT 6.5940 Fall 2026 Labs：课程计划已发布，但调研日公开链接尚不完整；先用 2024 的五个 Colab。
 
 ## 维护状态与来源核验
 
-下表的“最近更新”取自 GitHub API 的 `pushed_at`，只表示仓库活动，不能单独代表内容质量。
+数据快照：2026-08-31（GitHub API，UTC）。这里改用**默认分支 HEAD commit**，而不是仓库级 `pushed_at`：后者可能被非默认分支、标签或维护操作推进，不能准确回答“主线最后提交是什么”。短 SHA 和提交标题都链接到原始 commit；Stars 只是社区关注度信号，不等于教学质量。
 
-| 项目 | 最近更新 | 许可证/状态 |
-| --- | --- | --- |
-| Stanford CS336 Assignment 1 | 2026-04-07 | MIT，活跃 |
-| SCALE-Sim | 2026-06-28 | MIT，活跃 |
-| hls4ml Tutorial | 2026-08-17 | 仓库未声明标准 SPDX；活跃 |
-| FINN | 2026-08-31 | BSD-3-Clause，活跃 |
-| Gemmini | 2026-06-30 | 仓库 API 未识别 SPDX；活跃 |
-| CFU-Playground | 2026-02-26 | Apache-2.0，活跃 |
-| Timeloop/Accelergy Exercises | 2025-04-09 | MIT，活跃 |
-| MLC.ai Notebooks | 2024-11-22 | Apache-2.0，可用但更新较慢 |
-| Zero to Hero | 2024-08-18 | MIT，内容稳定 |
-| EE292D Labs | 2025-05-06 | Apache-2.0 |
-| tinyMLx Colabs | 2026-06-27 | 仓库 API 未识别 SPDX；持续更新 |
-| TFLite Micro | 2026-08-28 | Apache-2.0，活跃 |
-| MLPerf Tiny | 2026-07-13 | Apache-2.0，活跃 |
-| FINN Examples | 2026-03-10 | BSD-3-Clause，活跃 |
-| Jetson Inference | 2025-10-16 | MIT，活跃 |
+活跃度口径：高＝180 天内有默认分支提交；中＝181–365 天；稳定/低频＝超过 365 天但未归档；归档＝GitHub `archived=true`。这是用于复现风险排序的统一口径，不代表内容是否过时。
+
+| 仓库 | Stars | 默认分支最后提交（UTC） | 提交标题 | 活跃度；许可证 |
+| --- | ---: | --- | --- | --- |
+| [karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero) | 24,204 | 2024-02-20 · [`73c3fcc7`](https://github.com/karpathy/nn-zero-to-hero/commit/73c3fcc741f0ec104ca850b1fb0df90e7e8d4cde) | add lecture 8 tokenization | 稳定/低频；MIT |
+| [stanford-cs336/assignment1-basics](https://github.com/stanford-cs336/assignment1-basics) | 2,680 | 2026-04-07 · [`a158843b`](https://github.com/stanford-cs336/assignment1-basics/commit/a158843b20107949f1a8d7df1b05cd33b9166712) | Change leaderboard time limit from 90 to 45 minutes | 高；MIT |
+| [stanford-cs336/assignment2-systems](https://github.com/stanford-cs336/assignment2-systems) | 312 | 2026-05-01 · [`ca8bc81a`](https://github.com/stanford-cs336/assignment2-systems/commit/ca8bc81a59b70516f7ebb2da4808daade877c736) | Minor fix for label state | 高；MIT |
+| [stanford-cs336/assignment3-scaling](https://github.com/stanford-cs336/assignment3-scaling) | 100 | 2026-05-08 · [`03e93729`](https://github.com/stanford-cs336/assignment3-scaling/commit/03e9372992e913061b9e78b5cfcb62ad8a87de35) | add extra config.py | 高；MIT |
+| [stanford-cs336/assignment4-data](https://github.com/stanford-cs336/assignment4-data) | 84 | 2026-05-07 · [`0555bea6`](https://github.com/stanford-cs336/assignment4-data/commit/0555bea66369872d912652debf10b115ca0688c8) | automatically mkdir for local data directory | 高；MIT |
+| [stanford-cs336/assignment5-alignment](https://github.com/stanford-cs336/assignment5-alignment) | 215 | 2026-06-04 · [`c2734a26`](https://github.com/stanford-cs336/assignment5-alignment/commit/c2734a26308710949fe13226960a1e8cece94b7e) | Switched shared volume env | 高；未识别 SPDX |
+| [mlc-ai/notebooks](https://github.com/mlc-ai/notebooks) | 227 | 2024-11-22 · [`ce3d8d3a`](https://github.com/mlc-ai/notebooks/commit/ce3d8d3aff45a728ea6a50d4acd38ad75fef3749) | MLC LLM structured generation with XGrammar | 稳定/低频；Apache-2.0 |
+| [scalesim-project/SCALE-Sim](https://github.com/scalesim-project/SCALE-Sim) | 514 | 2025-12-17 · [`9f98c437`](https://github.com/scalesim-project/SCALE-Sim/commit/9f98c4371055a54c75209c2e02b640b897550532) | Merge pull request #157 from scalesim-project/validation | 中；MIT |
+| [Accelergy-Project/timeloop-accelergy-exercises](https://github.com/Accelergy-Project/timeloop-accelergy-exercises) | 121 | 2025-04-09 · [`2d551080`](https://github.com/Accelergy-Project/timeloop-accelergy-exercises/commit/2d5510807128e9bd5f1cad0705cdf2ec4612fd4e) | Update arch.yaml | 稳定/低频；MIT |
+| [fastmachinelearning/hls4ml-tutorial](https://github.com/fastmachinelearning/hls4ml-tutorial) | 442 | 2026-08-14 · [`3069ac8d`](https://github.com/fastmachinelearning/hls4ml-tutorial/commit/3069ac8d20a5d384613587ad64adef931f4be654) | Merge pull request #125 from bo3z/tutorial-revamp-2026 | 高；未识别 SPDX |
+| [Xilinx/finn](https://github.com/Xilinx/finn) | 1,045 | 2026-04-14 · [`39f0c9a6`](https://github.com/Xilinx/finn/commit/39f0c9a6b7675f62d47390fbf9a591707bcbac9b) | Reverse ONNX upgrade to stay aligned with QONNX | 高；BSD-3-Clause |
+| [google/CFU-Playground](https://github.com/google/CFU-Playground) | 564 | 2026-02-26 · [`7f8ec414`](https://github.com/google/CFU-Playground/commit/7f8ec4147b39db98534f8a10f9ddb1c26aca5648) | Merge pull request #821 | 中；Apache-2.0 |
+| [ucb-bar/gemmini](https://github.com/ucb-bar/gemmini) | 1,441 | 2025-09-01 · [`8c3f9923`](https://github.com/ucb-bar/gemmini/commit/8c3f9923a44a2fe2c7930587be297d6d4f8c09ca) | Merge pull request #392 from ucb-bar/modular | 中；未识别 SPDX |
+| [ee292d/labs](https://github.com/ee292d/labs) | 63 | 2025-05-06 · [`c0a07801`](https://github.com/ee292d/labs/commit/c0a078015c9175a089c43f94441e65aa5167af25) | Added VAD install step | 稳定/低频；Apache-2.0 |
+| [tinyMLx/courseware](https://github.com/tinyMLx/courseware) | 218 | 2025-11-25 · [`07f3c50a`](https://github.com/tinyMLx/courseware/commit/07f3c50a4c1906c745fdd72696d75fc22bb85493) | Merge pull request #4 from tinyMLx/imu-updates | 中；未识别 SPDX |
+| [tinyMLx/colabs](https://github.com/tinyMLx/colabs) | 136 | 2026-06-27 · [`f881acc6`](https://github.com/tinyMLx/colabs/commit/f881acc69ec2bf194a03f1a3ae5492910e752c3d) | Merge pull request #38 from tinyMLx/refactor_june2026_v2 | 高；未识别 SPDX |
+| [tinyMLx/arduino-library](https://github.com/tinyMLx/arduino-library) | 58 | 2025-12-09 · [`2e829a70`](https://github.com/tinyMLx/arduino-library/commit/2e829a704376ee5452a49f90cf996bb2e5c218a7) | Merge pull request #17 from NoahGruenert/magicwandimufix | 中；未识别 SPDX |
+| [dusty-nv/jetson-inference](https://github.com/dusty-nv/jetson-inference) | 8,977 | 2025-10-16 · [`45da40a8`](https://github.com/dusty-nv/jetson-inference/commit/45da40a8f3c180191b269f57f736caaa025b8a69) | Merge pull request #1942 from johnnynunez/master | 中；MIT |
+| [Xilinx/finn-examples](https://github.com/Xilinx/finn-examples) | 263 | 2025-01-15 · [`810a1e77`](https://github.com/Xilinx/finn-examples/commit/810a1e7759163ac313cb7739743da4184fb9135d) | Merge pull request #111 from Xilinx/feature/issue-templates | 稳定/低频；BSD-3-Clause |
+| [tensorflow/tflite-micro](https://github.com/tensorflow/tflite-micro) | 3,066 | 2026-08-28 · [`f59d9879`](https://github.com/tensorflow/tflite-micro/commit/f59d98795086b522d7d53f683a0df3ee704afc18) | Use Keras native format for model serialization | 高；Apache-2.0 |
+| [mlcommons/tiny](https://github.com/mlcommons/tiny) | 476 | 2026-07-13 · [`4addd0fa`](https://github.com/mlcommons/tiny/commit/4addd0fa08d216e20637637874e084895f289da4) | STLINKv3Power support update | 高；Apache-2.0 |
+| [apache/tvm](https://github.com/apache/tvm) | 13,707 | 2026-08-30 · [`b16cdecb`](https://github.com/apache/tvm/commit/b16cdecbd84b8405d77069c50f0233e909eafc00) | Validate ONNX Flatten axis range | 高；Apache-2.0 |
+| [Xilinx/DPU-PYNQ](https://github.com/Xilinx/DPU-PYNQ) | 249 | 2025-08-12 · [`b2e018e8`](https://github.com/Xilinx/DPU-PYNQ/commit/b2e018e8a6e4b93a1d793e02aa4c58ebd9d0f143) | public archive | **已归档**；Apache-2.0 |
+| [pulp-platform/pulp-training](https://github.com/pulp-platform/pulp-training) | 6 | 2019-10-22 · [`ece95a1f`](https://github.com/pulp-platform/pulp-training/commit/ece95a1feffb1e5ad1b2641885bdec5651abdeac) | update conv for pulp training | **已归档**；未识别 SPDX |
 
 ## 最终优先清单
 
 如果只选六套，建议按以下顺序：
 
-1. Zero to Hero：真正理解神经网络和 GPT。
-2. MIT 6.5940 Colabs：模型压缩和高效 AI。
-3. Stanford CS336 Assignment 1：从 tokenizer 到 Transformer 训练。
-4. SCALE-Sim：第一套 NPU/systolic array 实验。
-5. Timeloop/Accelergy：dataflow、存储和能耗建模。
-6. CFU-Playground：从仿真过渡到 FPGA 自定义加速单元。
+1. [Zero to Hero](https://github.com/karpathy/nn-zero-to-hero)：真正理解神经网络和 GPT。
+2. [MIT 6.5940 Colabs](https://hanlab.mit.edu/courses/2024-fall-65940)：模型压缩和高效 AI。
+3. [Stanford CS336 Assignment 1](https://github.com/stanford-cs336/assignment1-basics)：从 tokenizer 到 Transformer 训练。
+4. [SCALE-Sim](https://github.com/scalesim-project/SCALE-Sim)：第一套 NPU/systolic array 实验。
+5. [Timeloop/Accelergy](https://github.com/Accelergy-Project/timeloop-accelergy-exercises)：dataflow、存储和能耗建模。
+6. [CFU-Playground](https://github.com/google/CFU-Playground)：从仿真过渡到 FPGA 自定义加速单元。
 
 购买开发板前，先完成前五项中的至少三项。这样才能根据真正感兴趣的是部署、编译器、架构还是 RTL 来选板，而不是先买硬件再寻找用途。
