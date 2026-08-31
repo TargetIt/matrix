@@ -2,6 +2,8 @@
 
 调研日期：2026-08-31
 
+专题调研：[移动 GPU 实时超分辨率与插帧实验](mobile-gpu-super-resolution-frame-generation.md)
+
 ## 结论
 
 如果目标是从“会训练模型”逐步走到“理解和实现 NPU”，不建议一开始购买开发板。更有效的顺序是：
