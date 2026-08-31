@@ -27,6 +27,7 @@
 - [`stanford-ee292d/`](stanford-ee292d/)：课程身份核验、课程结构、端侧 NPU 相关性与公开材料。
 - [`mit-6.5930/`](mit-6.5930/)：Spring 2026 课程说明及全套公开 PDF。
 - [`harvard-cs2420/`](harvard-cs2420/)：编号演变、Fall 2025 课程说明及公开 PDF 的可用性边界。
+- [`lab-survey/`](lab-survey/)：神经网络、Transformer 与 AI 加速器实践 Lab 调研；先列无需开发板的路线，再列需要 Raspberry Pi、Arduino、Jetson 或 FPGA 的路线。
 
 ## 口径与限制
 
