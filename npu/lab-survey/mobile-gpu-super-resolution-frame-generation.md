@@ -33,6 +33,18 @@
 
 直达：[项目页](https://mob-fgsr.github.io/) · [论文](https://mob-fgsr.github.io/resources/paper/SIGGRAPH_Conf_Mob_FGSR.pdf) · [源码](https://github.com/Mob-FGSR/MobFGSR)
 
+**核心算法**
+
+- 输入相邻真实渲染帧的 color、depth 和 motion vector；插值路径先做 depth-aware motion splatting，以深度竞争处理前后景，再得到中间时刻的双向运动。
+- 外推路径只使用当前帧和历史帧预测未来运动，通过运动传播与空洞填补处理未来时刻新暴露的区域；随后统一执行 warp、遮挡修复和 blend。
+- 超分路径采用时域累积，并用学习得到的 LUT 保存 16 像素邻域重采样权重；权重推理已离线折叠进查找表，运行时没有神经网络、TensorRT 或 NPU 依赖。
+
+**复现平台要求**
+
+- 官方程序：Linux/Windows 上支持 OpenGL 4.3 compute shader 的 GPU，C++11 编译器和 CMake；准备连续帧的 color/depth/motion-vector 数据，并按仓库说明配置输入目录。
+- 论文移动结果：Snapdragon 8 Gen 3/Adreno；公开仓库并不是 Android 游戏插件，因此要在移动 GPU 上复现需自行移植 EGL/Android 或 Vulkan，并接入引擎 G-buffer。
+- 当前 M4 Pro 的原生 OpenGL 只到 4.1，不能原样构建 4.3 compute 路径；可用于代码分析和 Vulkan/Metal 移植，但不能作为官方代码的直接运行平台。
+
 这是本调研的第一优先级。项目来自浙江大学、OPPO 计算与图形研究院和 UCSB，发表于 SIGGRAPH 2024，目标就是在缺少桌面级 optical-flow 硬件的移动 GPU 上同时完成 frame generation 与 super resolution。
 
 它的特点是：
@@ -56,6 +68,18 @@
 ### 2. [Qualcomm Snapdragon GSR 2：移动时域超分基线](https://github.com/SnapdragonGameStudios/snapdragon-gsr)
 
 直达：[SGSR2 shader](https://github.com/SnapdragonGameStudios/snapdragon-gsr/tree/main/sgsr/v2) · [Vulkan 样例](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/tree/main/samples/sgsr2) · [Unreal 插件](https://github.com/SnapdragonGameStudios/snapdragon-game-plugins-for-unreal-engine) · [官方技术说明](https://www.qualcomm.com/developer/blog/2024/10/introducing-snapdragon-game-super-resolution-2)
+
+**核心算法**
+
+- SGSR2 是非神经网络 TAAU：先把低分辨率 color、depth、motion vector 转换为时域重投影需要的缓冲，再用历史帧重投影、历史有效性判断和当前帧信息重建高分辨率结果。
+- 放大阶段使用为移动 GPU 优化的 Lanczos 类重建，并可追加锐化；官方同时给出两遍 compute、两遍 fragment 和三遍 compute 三种组织方式。
+- fragment 版本把工作放进图形管线，尽量利用 tile/GMEM 驻留和固定功能采样；compute 版本则更便于异步调度和通用移植，两者算法目标相同但访存路径不同。
+
+**复现平台要求**
+
+- 官方 Vulkan framework 可构建 Android 和 Windows 版本：需要 Git、Python 3（官方测试 3.10.9）、CMake（官方测试 3.30+）和 Vulkan SDK 1.3+；Windows 使用 Visual Studio 2022。
+- Android 还需要 Android Studio、Android SDK/NDK 和 Ninja；目标机以支持 Vulkan 的 Snapdragon/Adreno 为首选，其他 Vulkan GPU 可验证可移植性，但不能预期得到相同的 tile 优化收益。
+- 引擎必须输出低分辨率 color、depth、motion vector、相机 jitter 和历史帧状态；应在透明/UI 合成之前执行，并正确处理相机切换和历史重置。
 
 SGSR2 是专门为 Adreno tile-based GPU 优化的 TAAU。核心输入是低分辨率 color、depth 和 motion vector，提供 compute 两遍/三遍以及 fragment 两遍等变体，源码采用 BSD-3-Clause 许可。
 
@@ -81,6 +105,18 @@ Qualcomm 在 Snapdragon 8 Gen 3、1260×2800 输出下公布的数据很有架�
 
 直达：[AFME power-saving 样例](https://github.com/SnapdragonGameStudios/adreno-gpu-opengl-es-code-sample-framework/tree/main/samples/amfe_power_saving) · [Motion Estimation 样例](https://github.com/SnapdragonGameStudios/adreno-gpu-opengl-es-code-sample-framework/tree/main/samples/motion_estimation) · [Synchronous Space Warp 说明](https://www.qualcomm.com/developer/blog/2022/09/virtual-boost-vr-rendering-performance-synchronous-space-warp)
 
+**核心算法**
+
+- AFME 是帧外推而非双帧插值：应用交替提交真实渲染帧和 `glExtrapolateTex2DQCOM` 生成帧，驱动根据之前两张 color texture 推断运动并预测下一时刻画面。
+- Motion Estimation 样例展示由 reference/target image 生成运动矢量纹理；AFME 把运动估计、遮挡处理和重建封装在 Qualcomm 驱动/硬件扩展中，应用侧主要负责纹理、同步和 present 节奏。
+- 因为不等待未来帧，外推延迟低于插值，但新暴露区域没有真实未来信息，快速旋转、边界和非线性动画更容易出错。
+
+**复现平台要求**
+
+- 需要 Android Snapdragon/Adreno 设备，且 OpenGL ES 驱动实际暴露对应 QCOM motion-extrapolation 扩展；必须在运行时查询扩展，只有普通 OpenGL ES/Vulkan 支持并不够。
+- 构建样例需要 Android Studio、Android SDK、NDK、Gradle 和 CMake，可按 Adreno OpenGL ES sample framework 的根目录构建脚本生成 APK。
+- 公开代码只能复现 API 调用、交替帧渲染和功耗效果，不能复现专有运动估计内核；非 Qualcomm GPU 上应以 Mob-FGSR 外推或 ExtraNet 替代做算法对照。
+
 AFME 样例每隔一帧停止传统渲染，通过 `glExtrapolateTex2DQCOM` 从之前的帧外推新帧，从而减少交替帧的 CPU/GPU 工作量。它比 SGSR2 更接近“芯片里增加插帧能力”的问题。
 
 可观察的设计点：
@@ -96,6 +132,18 @@ AFME 样例每隔一帧停止传统渲染，通过 `glExtrapolateTex2DQCOM` 从�
 
 直达：[Generic Library](https://github.com/arm/accuracy-super-resolution-generic-library) · [教程](https://documentation-service.arm.com/static/6814d88279c4c17ad8038ae0) · [官方介绍](https://developer.arm.com/mobile-graphics-and-gaming/arm-accuracy-super-resolution)
 
+**核心算法**
+
+- ASR 从 FSR 2.2.2 演化而来，是非神经时域超分：用当前低分辨率 color、depth、motion vector、jitter/exposure 和历史高分辨率结果完成重投影。
+- 主要阶段包括深度/运动矢量重建与膨胀、disocclusion 和历史置信度判断、当前帧重建、时域累积以及可选锐化。
+- Quality、Balanced、Performance 变体通过精度、采样和历史处理取舍降低带宽与算力，重点适配移动 tile-based GPU，而不是简单改变输入分辨率。
+
+**复现平台要求**
+
+- Generic Library 当前内置后端是 Vulkan；需要 C/C++ 工具链、CMake、Vulkan SDK，以及支持 compute shader 的 Vulkan GPU。可在 Linux/Windows 先构建，再部署到 Android Vulkan 设备。
+- 最有代表性的目标是 Mali/Immortalis，但库并不把运行限制在 Arm GPU；跨 GPU 复现时应分别记录 shader time、external bandwidth 和 tile load/store。
+- 引擎需提供 color、depth、motion vector、jitter、exposure/reactive 信息并管理历史资源；ASR 应在大多数显示分辨率后处理和 UI 之前接入。
+
 Arm ASR 基于 AMD FSR 2.2.2，针对移动带宽和算力做了 Quality、Balanced、Performance 三档优化，并提供 generic library 和 Unreal 插件。
 
 官方在 2400×1080 输出上给出的 Immortalis-G720 数据约为 2.0–2.9 ms；在 2800×1260 上约为 2.5–4.1 ms。它很适合作为“桌面 FSR2 移动化后需要做什么”的差分研究对象。
@@ -110,6 +158,18 @@ Arm ASR 基于 AMD FSR 2.2.2，针对移动带宽和算力做了 Quality、Balan
 ### 5. [Arm NSS/NFRU：开放的移动神经超分与插帧](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
 直达：[SDK 用户指南](https://github.com/arm/neural-graphics-sdk-for-game-engines/blob/main/docs/user_guide.md) · [训练与 QAT Notebook](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset) · [NSS 模型](https://huggingface.co/Arm/neural-super-sampling) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan)
+
+**核心算法**
+
+- NSS 是量化神经时域超分：融合低分辨率 color、depth、motion vector 和历史信息，通过 Vulkan tensor/data-graph 执行模型，输出高分辨率帧；Model Gym 提供训练、微调、QAT 和 VGF 导出链路。
+- NFRU 是双帧插值：融合前后真实帧、引擎 motion vector、depth、内部 optical-flow correspondence 和神经网络，在两个真实帧之间生成一帧；固定增加一个真实渲染帧的等待延迟。
+- NFRU 把 prepare、optical flow/data graph、warp/disocclusion 和 compose 暴露为可观察阶段，适合比较“全 GPU”“GPU + NPU”以及固定功能光流单元三种映射。
+
+**复现平台要求**
+
+- SDK 支持 Windows 11 x64、Linux x64 和 Android AArch64，图形后端为 Vulkan；需要 Python 3、CMake（SDK 文档限定 3.21–3.31）和 Vulkan SDK，官方推荐 1.4.321.0。
+- Windows 需要 Visual Studio 2019+；Linux 需要 C++20 工具链；Android 需要 Android Studio 2024.2.1+、NDK r23+、Android SDK 和 JDK 21，官方验证环境为 Android 17。
+- 原生执行依赖 `VK_ARM_tensors`、`VK_ARM_data_graph`，NFRU 还使用 optical-flow data-graph 扩展；设备尚未支持时需加载 Arm Vulkan ML emulation layer。当前图只支持量化 data graph，应重点验证 INT8 精度和模拟层开销。
 
 这是当前最值得研究的开放神经路线。SDK 包含：
 
@@ -134,6 +194,18 @@ NFRU 生成两个真实渲染帧之间的一帧，采用固定的一个渲染帧
 
 直达：[FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) · [FSR 样例说明](https://gpuopen.com/manuals/fsr_sdk/samples/samples/super-resolution/) · [FSR2 独立源码](https://github.com/GPUOpen-Effects/FidelityFX-FSR2)
 
+**核心算法**
+
+- FSR 3.1 的超分部分是非神经 TAAU，使用低分辨率 color、depth、motion vector、jitter、exposure 和 reactive mask 做历史重投影、锁定/拒绝、累积与重建。
+- Frame Generation 同时利用引擎 motion vector/depth 与 SDK optical flow，把前后两张显示分辨率真实帧重投影到中间时刻，再处理 disocclusion、融合和 UI composition；它是插值，必须等待后一张真实帧。
+- proxy swapchain 和 frame-pacing 层负责在真实 present 之间插入生成帧；3.1 的 SR/FG 可解耦，便于只保留 FG 并换用其他 upscaler。
+
+**复现平台要求**
+
+- 最直接的官方复现环境是 Windows 10/11、DirectX 12 GPU、Visual Studio/CMake 和 FidelityFX SDK；FSR 3.1 也有 Vulkan 集成路径，适合在 Linux/Android 原型中移植 shader 与资源调度。
+- SR 需要低分辨率 color/depth/MV、jitter、exposure/reactive mask；FG 还需要显示分辨率帧、depth/MV、HUD-less color 或独立 UI，以及 swapchain/present 控制权。
+- 桌面样例可在 AMD、NVIDIA、Intel GPU 上做功能基线；移动 GPU 移植必须重新预算显示分辨率 optical flow、额外历史缓冲、异步队列和 UI 合成的带宽，不能直接套用桌面耗时。
+
 FSR 3.1 把 temporal upscaling、optical flow、frame interpolation、swapchain 和 UI composition 连成完整流程，提供 HLSL/C++ 源码以及 DirectX 12、Vulkan 路径。它适合研究完整系统，而不是直接拿来当移动性能目标。
 
 必须重点阅读的部分：
@@ -151,6 +223,18 @@ FSR 3.1 把 temporal upscaling、optical flow、frame interpolation、swapchain 
 
 直达：[集成样例](https://github.com/NVIDIA-RTX/Streamline_Sample) · [DLSS-FG 编程指南](https://github.com/NVIDIA-RTX/Streamline/blob/main/docs/ProgrammingGuideDLSS_G.md) · [Optical Flow SDK](https://developer.nvidia.com/optical-flow-sdk)
 
+**核心算法**
+
+- DLSS Frame Generation 以当前/前一真实帧、depth、密集 motion vector、相机常量和 HUD-less color 为输入，结合 RTX optical-flow accelerator 的像素运动与引擎几何运动，再由专有 AI 网络生成中间帧。
+- Streamline 负责资源 tag、frame token、插件调度和 swapchain/present 集成；Reflex 通过调整 CPU 提交和渲染队列降低插帧增加的端到端延迟。
+- 网络结构、训练数据和 DLSS-G 推理内核闭源；可复现的是输入协议、UI/HDR/动态分辨率处理、时序同步与性能统计，不是算法权重。
+
+**复现平台要求**
+
+- 需要 Windows 10 20H1（build 19041）或更新版本、开启 Hardware-Accelerated GPU Scheduling、支持 DLSS Frame Generation 的 NVIDIA RTX GPU、匹配驱动和正式 `sl.dlss_g.dll`。
+- 官方 Streamline sample 构建需要 CMake 3.20+、Visual Studio、Windows SDK 10.0.22000+；Vulkan 路径还需要 Vulkan SDK（样例基线 1.2.198.1+）和近期 DXC。
+- 可选择 Direct3D 12 或 Vulkan 接入，并提供 depth/MV/HUD-less buffer 与正确 frame ID；Streamline 框架源码开放，但插件二进制及支持硬件不可替换，因此不适合在自研移动 GPU 上直接复现。
+
 Streamline 框架、接口、样例和编程指南是开放的，但 `sl.dlss_g.dll` 是预编译插件，不能从仓库构建。因此它适合回答以下系统问题：
 
 - 应用怎样提交 depth、motion vector、HUD-less color 和 camera constants；
@@ -165,6 +249,18 @@ Streamline 框架、接口、样例和编程指南是开放的，但 `sl.dlss_g.
 
 直达：[XeSS-FG 指南](https://github.com/intel/xess/blob/main/doc/xess_fg_developer_guide_english.md) · [基础 FG 样例](https://github.com/intel/xess/tree/main/samples/basic_sample_frame_generation)
 
+**核心算法**
+
+- XeSS-FG 在 present 前执行一组 compute pass，融合前后真实帧、当前到前一帧的 motion vector、depth 和 frame constants，通过专有 AI 插值内核合成中间帧。
+- SDK 用 proxy `IDXGISwapChain4` 管理生成帧、UI 和 pacing；可提交 HUD-less color 或选择 UI texture/回调等合成模式。
+- Xe Low Latency（XeLL）是强制组成，用于限制渲染队列和校准帧标识；算法二进制可跨厂商运行，但训练和网络实现不开放。
+
+**复现平台要求**
+
+- 需要 Windows 10 x64 build 19043+ 或 Windows 11 build 22000+、DirectX 12、XeSS SDK 动态库和 Microsoft Visual C++ Redistributable 14.40.33810+。
+- Intel 路径要求文档列出的 Arc/Core Ultra GPU 及 32.0.101.7029+ 驱动；非 Intel GPU 需要 Shader Model 6.4，且只支持生成一张中间帧。
+- 必须集成 XeLL 1.3+，并提供 motion vector、depth、frame constants、UI/HUD-less 资源及 swapchain 代理权限；因此适合桌面接口对照，不是 Android/移动 Vulkan 的直接复现平台。
+
 XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 compute shader pass 加 proxy swapchain 实现，要求 motion vector、depth、frame constants，并强制配合 XeLL。非 Intel、支持 Shader Model 6.4 的 GPU也可运行一帧插值模式。
 
 它的内核不是面向移动 GPU 的开放参考，但输入标注、UI 模式、debug inspector、present pacing 和跨厂商 fallback 设计值得纳入 API 对照表。
@@ -173,6 +269,18 @@ XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 com
 
 直达：[Frame Interpolator API](https://developer.apple.com/documentation/metalfx/mtlfxframeinterpolatordescriptor) · [WWDC25 集成讲解与代码](https://developer.apple.com/videos/play/wwdc2025/211/) · [Apple Game Porting Toolkit 指南](https://github.com/apple/game-porting-toolkit/blob/main/game-porting-skills/skills/using-metalfx-frame-interpolation/SKILL.md)
 
+**核心算法**
+
+- MetalFX Temporal Scaler 使用低分辨率 color、depth、motion vector、jitter 和历史帧执行 Apple 专有时域/机器学习超分；Frame Interpolator 再读取前后真实 color、motion、depth，生成一张中间显示帧。
+- 推荐在 tone mapping 后执行 frame interpolation；UI 可离屏提供给 interpolator、在生成帧后独立合成，或按显示帧重绘，present thread 负责均匀 pacing。
+- 模型、训练方法和 kernel 闭源，只能把 MetalFX 当作 API、画质、时延、内存和功耗的黑盒对照。
+
+**复现平台要求**
+
+- 需要支持 MetalFX Frame Interpolation 的 Apple silicon、相应 macOS/iOS/iPadOS/tvOS/visionOS SDK、Xcode 和 Metal 工程；创建前用 `supportsDevice` 查询，不能只按产品名称假定支持。
+- 当前 M4 Pro 可作为首选本地平台；应用需创建符合 descriptor 格式/尺寸约束的 color、depth、motion、output 和可选 UI texture，并把 scaler/interpolator 与 present thread 串起来。
+- 无法在 Android、Vulkan 或非 Apple GPU 上运行，也无法提取算法权重；跨平台实验应固定相同场景、输入/输出分辨率和画质指标，只比较可观察行为。
+
 当前 M4 Pro 无需购买开发板即可测试 MetalFX temporal upscaling 与 frame interpolation。Frame Interpolator 使用前后 color、motion、depth 和输出纹理，可与 temporal scaler 串联；Apple 还公开了 UI 与 present-thread 的集成指导。
 
 其价值是建立 Apple 移动/统一内存架构上的黑盒性能和接口基线。算法本身闭源，Metal API 也不能直接迁移到 Android/Vulkan，因此应把它作为对照组，而不是主实现。
@@ -180,6 +288,18 @@ XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 com
 ### 10. [ExtraNet 与通用视频插帧：算法补充，不做第一主线](https://github.com/fuxihao66/ExtraNet)
 
 直达：[ExtraNet 源码](https://github.com/fuxihao66/ExtraNet) · [Google FILM](https://github.com/google-research/frame-interpolation)
+
+**核心算法**
+
+- ExtraNet 做未来帧外推：利用延迟渲染/交错帧产生的 G-buffer 与遮挡运动信息，把 backward motion vector splat 成近似 forward/occlusion motion，再由神经网络预测未来 shading/base color 并修复 disocclusion。
+- FILM 是纯图像双帧插值：共享卷积权重的多尺度特征提取器在不同分辨率建立对应关系，再合成中间帧；训练只需图像 triplet，不依赖预训练 optical-flow/depth 网络。
+- ExtraNet 更贴近低延迟游戏外推和引擎协作；FILM 更适合建立“无 depth/MV 的视频算法”画质下限/上限对照，不应与引擎感知方案混作同一条件。
+
+**复现平台要求**
+
+- ExtraNet 训练/离线推理需要 Python 与仓库 requirements；数据生成依赖其定制 Unreal Engine 4.25.3 或更早版本、Windows/DX12，并按说明开启 ray tracing、关闭后处理及不受支持的透明/粒子等内容。
+- ExtraNet 的实时性能参考另有 TensorRT 实现，需 NVIDIA CUDA/TensorRT GPU 环境；公开 UE 代码更适合生成训练数据和离线验证，不能直接视作成熟游戏插件。
+- FILM 最容易通过官方 TensorFlow 2/Colab Notebook 复现；本地可用 Linux/Windows Python + TensorFlow，GPU 对高分辨率序列更实用，CPU 仅适合小图功能验证。它不需要开发板、depth 或 motion vector。
 
 ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和 TensorRT 推理材料；适合研究神经外推和 disocclusion motion vector。FILM、RIFE 等视频插帧方案只依赖图像，适合学习 optical flow 和遮挡合成，但通常不知道游戏引擎的 depth、object motion、camera jitter 和 UI，因此不能代表游戏帧生成的最佳上限。
 
