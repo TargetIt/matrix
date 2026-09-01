@@ -1,6 +1,6 @@
 # 移动 GPU 实时超分辨率与插帧实验调研
 
-调研日期：2026-08-31
+调研日期：2026-08-31；Transformer 专项更新：2026-09-01
 
 ## 结论
 
@@ -11,8 +11,9 @@
 1. 先跑 [Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR)，它是当前最贴合“移动 GPU + 超分 + 插帧”目标的公开研究代码。
 2. 在 Android Vulkan 上跑 [Snapdragon GSR 2](https://github.com/SnapdragonGameStudios/snapdragon-gsr) 及其[官方 Vulkan 样例](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/tree/main/samples/sgsr2)，建立纯 shader 时域超分基线。
 3. 跑 [Arm ASR](https://github.com/arm/accuracy-super-resolution) 与 [Arm Neural Graphics SDK](https://github.com/arm/neural-graphics-sdk-for-game-engines)，分别研究移动优化的非神经时域超分，以及 NSS/NFRU 神经超分和插帧。
-4. 在 Windows 独显上跑 [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 的 FSR 3.1 路径，理解完整的 optical flow、frame interpolation、swapchain、UI 和 pacing 设计。
-5. 最后把同一批 color、depth、motion vector、exposure 和 UI 数据送入自研移动 GPU，比较 fragment、compute、专用光流单元和神经网络单元的成本。
+4. 增加 [RSTT-S](https://github.com/llmpass/RSTT) 端到端 Transformer 联合超分插帧，以及 Hugging Face [Swin2SR lightweight](https://huggingface.co/caidas/swin2SR-lightweight-x2-64) 单图 Transformer 超分基线；前者最贴合 STVSR，后者最容易开始。
+5. 在 Windows 独显上跑 [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 的 FSR 3.1 路径，理解完整的 optical flow、frame interpolation、swapchain、UI 和 pacing 设计。
+6. 最后把同一批 color、depth、motion vector、exposure 和 UI 数据送入自研移动 GPU，比较 fragment、compute、专用光流单元和神经网络单元的成本。
 
 最值得直接借鉴的并非某个厂商的模型权重，而是公共接口和数据流：低分辨率颜色、深度、运动矢量、抖动、曝光、reactive mask、无 UI 颜色、光流、历史缓冲、插值帧以及显示队列之间如何连接。
 
@@ -313,6 +314,167 @@ XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 com
 
 ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和 TensorRT 推理材料；适合研究神经外推和 disocclusion motion vector。FILM、RIFE 等视频插帧方案只依赖图像，适合学习 optical flow 和遮挡合成，但通常不知道游戏引擎的 depth、object motion、camera jitter 和 UI，因此不能代表游戏帧生成的最佳上限。
 
+## Transformer 超分与插帧专项调研
+
+先明确分类关系：**Transformer 本身属于神经网络，不是与“传统算法”和“神经网络”并列的第三类。** 更准确的划分是：
+
+- 传统非神经方案：TAAU、optical flow、motion compensation、warp/splat、历史累积，例如 SGSR2、ASR、FSR 3.1、Mob-FGSR；
+- CNN 神经方案：卷积网络负责特征提取、光流或合成，例如 FILM、RIFE、ExtraNet；
+- Transformer 神经方案：用 self-attention/cross-attention 建模远距离空间或时间对应关系，例如 Swin2SR、VRT、RSTT、VFIformer；
+- 混合方案：CNN、Transformer、显式光流、deformable attention 和传统 warp/compose 共同工作；实际视频方案大多属于这一类；
+- Diffusion Transformer：以生成式先验恢复细节，例如 SeedVR/SeedVR2，画质潜力高但计算和显存远超实时移动预算。
+
+### 路线总览
+
+| 路线 | 代表方案 | 输入与输出 | 是否同时超分和插帧 | 对移动 GPU 的意义 |
+| --- | --- | --- | --- | --- |
+| 单图 Transformer SR | [Swin2SR](https://huggingface.co/docs/transformers/model_doc/swin2sr)、[HiT-SR](https://github.com/XiangZ-0/HiT-SR)、[HAT](https://github.com/XPixelGroup/HAT) | 单张低分辨率图 → 单张高分辨率图 | 否，只提高空间分辨率 | 最容易跑通和做算子分析，但逐帧执行可能闪烁，也不增加 FPS |
+| Video Restoration Transformer | [VRT](https://github.com/JingyunLiang/VRT)、[RVRT](https://github.com/JingyunLiang/RVRT) | 多张低质量帧 → 多张高质量帧 | VRT 提供独立 VFI 和 STVSR 路径；RVRT 主要做视频恢复/SR | 可研究跨帧 attention、对齐和历史复用，但模型重、显存高 |
+| 端到端 STVSR | [RSTT](https://github.com/llmpass/RSTT) | 低帧率低分辨率序列 → 高帧率高分辨率序列 | **是，最直接匹配“超分插帧”** | 4.5M 参数的小模型适合做 Transformer 架构原型，但公开速度仍基于桌面 RTX |
+| Transformer VFI | [VFIformer](https://github.com/JIA-Lab-research/VFIformer)、[BiFormer](https://github.com/JunHeum/BiFormer)、[TTVFI](https://github.com/ChengxuLiu/TTVFI) | 前后 RGB 帧 → 中间 RGB 帧 | 否，只增加时间分辨率 | 可研究大运动和遮挡；仍需与 SGSR2/ASR 或其他 SR 串联 |
+| Diffusion Transformer 视频恢复 | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR) | 低质量视频 → 同帧率高质量视频 | 否，当前公开接口不生成中间帧 | 适合离线画质上限和数据增强，不适合移动实时 FG |
+
+这里的 **Space-Time Video Super-Resolution（STVSR）** 才是论文语境中与“超分插帧”最接近的任务：输入既是 low-resolution 又是 low-frame-rate，输出同时变成 high-resolution 和 high-frame-rate。不能因为模型名称含 video super-resolution 就默认它会增加帧数。
+
+### 11. [RSTT：端到端 Spatial-Temporal Transformer](https://github.com/llmpass/RSTT)
+
+直达：[论文](https://arxiv.org/abs/2203.14186) · [源码与预训练权重](https://github.com/llmpass/RSTT) · [Vimeo90K 数据集](http://toflow.csail.mit.edu/)
+
+**核心算法与大类**
+
+- **算法大类：端到端 Transformer 神经网络，同时执行空间超分和时间插帧。** 它不是“先 VFI、再 SR”的两个独立网络。
+- Encoder 从多张 LFR/LR 输入帧建立可复用 feature dictionary；Decoder 用 windowed multi-head cross-attention 和 shifted-window cross-attention 查询该字典，直接合成 HFR/HR 帧。
+- 小/中/大三种配置共享结构。论文中的小模型约 4.5M 参数，避免了传统 STVSR 把光流、插帧和 SR 堆成多个重型模块的问题。
+- 论文报告 720×576 输出约 26.2 FPS，但测试硬件是 NVIDIA Quadro RTX 6000；这不能视为移动实时结果，更达不到 60/120 Hz 游戏插帧目标。
+
+**复现平台要求**
+
+- 官方环境为 Python 3.8.11、PyTorch 1.9+、CUDA 11.4；建议在 Linux + NVIDIA CUDA GPU 上复现。仓库内直接包含 RSTT-S/M/L checkpoint，约 21/29/37 MB。
+- 评估使用 Vimeo90K Septuplet（完整原始训练/测试集约 82 GB）和 Vid4；只跑官方 checkpoint 不必重新训练。
+- 论文训练使用两张 Quadro RTX 6000，耗时超过 25 天；第一阶段不应从零训练，只做推理、裁剪微调和导出实验。
+- 代码采用 CC BY-NC-SA 4.0，限非商业研究；可用于内部算法验证，但产品化前必须重新确认许可或自行重写/训练。
+
+**对移动 GPU 的价值与缺口**
+
+- 这是本轮新增方案里与目标最贴近的第一优先级，可直接建立“单网络联合超分插帧”画质基线。
+- 它只读 RGB 视频，没有利用游戏引擎现成的 depth、object motion vector、camera jitter 和 UI mask。对游戏而言，应实验性增加这些条件输入，而不是照搬纯视频版本。
+- window attention 虽避免全局二次复杂度，仍会产生 Q/K/V 投影、attention score、softmax 和大量中间激活；芯片评估必须记录激活带宽，不能只算参数量或 MAC。
+
+### 12. [VRT/RVRT：通用视频 Transformer 与分步 STVSR](https://github.com/JingyunLiang/VRT)
+
+直达：[VRT 论文](https://arxiv.org/abs/2201.12288) · [VRT checkpoint/Colab](https://github.com/JingyunLiang/VRT/releases) · [RVRT 论文与源码](https://github.com/JingyunLiang/RVRT)
+
+**核心算法与大类**
+
+- **算法大类：多尺度视频恢复 Transformer。** VRT 用 temporal mutual self-attention（TMSA）联合完成运动估计、特征对齐与融合，再用 parallel warping 加强邻帧信息；shifted clips 让信息跨窗口传播。
+- VRT 官方任务同时包含 video SR、frame interpolation 和 space-time video SR。其 STVSR 示例复用已有 VSR 与 VFI checkpoint，更接近“两个 Transformer 模块串联”，不像 RSTT 那样是一个联合模型。
+- RVRT 改成“clip 内并行、clip 间循环”的结构，并用 guided deformable attention 对齐相邻 clip，以较低测试内存处理长视频；但官方重点是视频 SR、去模糊和去噪，不是插帧。
+
+**复现平台要求**
+
+- VRT/RVRT 官方环境均为 Ubuntu 18.04、Python 3.8、PyTorch 1.9.1+、CUDA 11.1；作者提供 release checkpoint、自动下载测试集的脚本和 Colab demo。
+- 显存不足可减小时空 tile，但会增加重叠计算并可能轻微改变结果。先用 4 帧 VFI 和 6/7 帧 VSR 小序列，不要直接输入长 1080p 视频。
+- VRT/RVRT 主体许可为 CC BY-NC，只适合非商业研究；它们适合作为高质量 teacher 或离线基准，不适合未经压缩直接部署到移动 GPU。
+
+### 13. [VFIformer、BiFormer、TTVFI：Transformer 帧插值](https://github.com/JIA-Lab-research/VFIformer)
+
+直达：[VFIformer 论文](https://arxiv.org/abs/2205.07230) · [VFIformer 源码](https://github.com/JIA-Lab-research/VFIformer) · [BiFormer 论文/源码](https://github.com/JunHeum/BiFormer) · [TTVFI 论文/源码](https://github.com/ChengxuLiu/TTVFI)
+
+**核心算法与大类**
+
+- **VFIformer：Transformer + flow 的混合插帧。** cross-scale window attention 建立跨帧长距离、多尺度对应关系，改善 CNN 局部感受野难以处理的大运动；训练还使用 LiteFlowNet 生成 ground-truth flow。
+- **BiFormer：bilateral Transformer + 传统 warp/blend。** 先在粗尺度估计对称双向运动，再用 blockwise bilateral cost volume 局部细化，最后 warp 两张输入并融合；目标特别面向 4K 大运动插帧。
+- **TTVFI：trajectory-aware Transformer + PWCNet。** 沿运动轨迹组织 attention token，并通过 consistent-motion 模块生成轨迹；它依赖自定义 correlation 扩展，工具链较旧。
+- 三者都只提升时间分辨率，不负责空间超分；若用于“超分插帧”，应与 SGSR2/ASR/HiT-SR 串联并比较 SR→VFI 与 VFI→SR 两种顺序。
+
+**复现平台要求**
+
+- VFIformer：Python 3.8+、PyTorch 1.8+、torchvision 0.9+；官方 checkpoint 在 Google Drive，单机可直接跑 demo，完整训练脚本使用 8 GPU。
+- BiFormer：Python 3.9、PyTorch 1.12.1、CUDA 11.6、cuDNN 8.3.2，并依赖 CuPy；官方 checkpoint 在 Google Drive。Apache-2.0 许可最适合后续工程改写。
+- TTVFI：Python 3.6、PyTorch 1.2、torchvision 0.4，并需编译 PWCNet correlation package；环境明显老化，复现成本高于 VFIformer/BiFormer。
+- 这些作者实现均以 NVIDIA CUDA/PyTorch 为验证平台，没有 Android Vulkan、Metal、NNAPI 或移动 NPU 的官方部署路径。
+
+### 14. [Swin2SR、HiT-SR：Hugging Face 上最容易开始的 Transformer 超分](https://huggingface.co/docs/transformers/model_doc/swin2sr)
+
+直达：[Swin2SR Hugging Face 文档](https://huggingface.co/docs/transformers/model_doc/swin2sr) · [Swin2SR x2 lightweight 权重](https://huggingface.co/caidas/swin2SR-lightweight-x2-64) · [HiT-SR 源码](https://github.com/XiangZ-0/HiT-SR) · [HiT-SR Hugging Face 页面](https://huggingface.co/XiangZ/hit-sr)
+
+**核心算法与大类**
+
+- **算法大类：单图 window Transformer 超分，不含时间建模和插帧。** 每帧独立运行时可能产生 temporal flicker，因此它只能是空间 SR 基线或联合网络的空间模块。
+- Swin2SR 以 Swin Transformer V2 的 shifted-window attention 建模局部/跨窗口关系，Hugging Face 已原生提供 `Swin2SRForImageSuperResolution`。
+- HiT-SR 使用逐层扩大的 hierarchical windows，并用对窗口尺寸线性复杂度的 spatial-channel correlation 代替昂贵的大窗口 attention。官方模型约 0.79–1.03M 参数，720p 输出的统计量约 53.8–58.0 GFLOPs，适合研究轻量化 attention。
+
+**复现平台要求**
+
+- Swin2SR 最容易复现：安装 PyTorch、Transformers、Pillow 后直接从 Hugging Face 下载。`caidas/swin2SR-lightweight-x2-64` 的 safetensors 约 4.1 MB，可在现有 M4 Pro 的 CPU/MPS 上先做单图功能验证。
+- HiT-SR 官方训练/测试环境为 Python 3.8、PyTorch 1.8、torchvision 0.9 和 NVIDIA CUDA；Apache-2.0。HF 页面主要提供架构代码，官方 checkpoint 仍通过 OneDrive 发布，不能当成标准 Transformers pipeline。
+- 两者都没有官方游戏引擎、Vulkan compute 或移动 NPU demo。移动验证需自行导出 ONNX/Core ML/TFLite 或重写 shader，并逐算子检查 window partition、transpose、softmax、LayerNorm 和 PixelShuffle 支持。
+
+### 15. [SeedVR2：Hugging Face 上的 Diffusion Transformer 视频超分上限](https://huggingface.co/ByteDance-Seed/SeedVR2-3B)
+
+直达：[官方源码](https://github.com/ByteDance-Seed/SeedVR) · [Hugging Face 模型集合](https://huggingface.co/collections/ByteDance-Seed/seedvr-6849deeb461c4e425f3e6f9e) · [SeedVR2-3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) · [在线 Space](https://huggingface.co/spaces/ByteDance-Seed/SeedVR2-3B) · [论文](https://arxiv.org/abs/2506.05301)
+
+**核心算法与大类**
+
+- **算法大类：生成式 Diffusion Transformer 视频恢复。** SeedVR2 通过 adversarial post-training 把多步扩散蒸馏为 one-step，并使用 adaptive window attention 适配不同输出分辨率。
+- 它擅长真实视频/AIGC 视频去噪、去压缩和细节生成，但官方接口保持输入帧数，不生成中间时刻；因此是“视频超分/修复”，不是“插帧”。
+- 生成式先验可能创造输入中不存在的纹理。对游戏文字、HUD、细线和可重复 benchmark，这类 hallucination 必须单独统计，不能只看主观锐度。
+
+**复现平台要求**
+
+- 官方提供 Apache-2.0 源码和 Hugging Face 的 3B/7B checkpoint；3B 主 checkpoint 约 13.6 GB，需要 Python 3.10、PyTorch 2.4、CUDA 12.1/12.4、FlashAttention 和 Apex。
+- 官方说明一张 H100 80 GB 可处理约 100×720×1280 视频，1080p/2K 使用 4 张 H100 80 GB sequence parallel。这一量级不具备移动实时可行性。
+- 它应作为离线画质 teacher、数据增强或主观质量上限，不应纳入第一版移动芯片实时 workload；所谓 one-step 只表示扩散步数为一，不等于一毫秒或一帧内完成。
+
+### Hugging Face 模型可用性核查
+
+| 搜索名称 | Hugging Face 现状 | 是否建议直接使用 |
+| --- | --- | --- |
+| [Swin2SR](https://huggingface.co/models?search=Swin2SR) | 有 Transformers 原生实现、多个 x2/x4/压缩/真实场景权重；`caidas` 模型卡、配置和 safetensors 完整 | **建议**，最适合验证 HF 下载、预处理和 attention 算子 |
+| [HiT-SR](https://huggingface.co/XiangZ/hit-sr) | 作者页面提供架构代码，但不是标准 Transformers pipeline，模型权重仍主要在 OneDrive | 可研究代码，不算一键模型 |
+| [SeedVR2](https://huggingface.co/collections/ByteDance-Seed/seedvr-6849deeb461c4e425f3e6f9e) | ByteDance 官方 3B/7B checkpoint、模型卡和 Space 完整 | 可做云端/多卡离线实验，不适合本地移动部署 |
+| VRT/RVRT/RSTT | HF 搜索易与无关文本模型重名；可靠 checkpoint 位于作者 GitHub release 或仓库 | 不建议从陌生 HF 搬运仓下载 |
+| VFIformer/BiFormer/TTVFI | HF 上缺少得到作者确认、下载量稳定的标准模型；权重主要在 Google Drive/OneDrive | 应从论文作者仓库开始 |
+
+HF 是模型托管平台，不代表页面上的模型经过官方验证，也不代表 Hugging Face `transformers` 库能直接加载。判断顺序应是：作者身份/论文链接 → model card → license → config/preprocessor → 权重格式 → 下载量与更新时间；不能只搜索相同模型名。
+
+### 建议新增的 Transformer 实验
+
+#### 实验 T1：[Swin2SR/HiT-SR 单图超分算子基线](https://huggingface.co/caidas/swin2SR-lightweight-x2-64)
+
+1. 在现有 M4 Pro 上用 Hugging Face Swin2SR 跑 x2 lightweight，记录 CPU/MPS 时间和峰值内存。
+2. 与 bilinear、SGSR2、ASR 对齐输入/输出分辨率；除 PSNR/SSIM/LPIPS 外，必须把同一视频逐帧处理后测 flicker。
+3. 导出计算图，逐项统计 QKV GEMM、attention score、softmax、LayerNorm、window reshape/transpose、PixelShuffle 的时间与读写字节。
+4. 再跑 HiT-SR，验证 hierarchical/linear attention 是否比 Swin window attention 更适合作为移动空间模块。
+
+#### 实验 T2：[RSTT 联合超分插帧](https://github.com/llmpass/RSTT)
+
+1. 用仓库内 RSTT-S checkpoint 跑 Vid4/Vimeo90K，先复现 2× temporal + 4× spatial 的官方任务。
+2. 与串联式 `VFIformer → SGSR2`、`SGSR2 → VFIformer` 比较画质、延迟、峰值显存和总带宽。
+3. 增加游戏数据输入通道：depth、引擎 MV、jitter、reactive/UI mask；先做 feature concatenation 消融，不立即从零训练大模型。
+4. 以 720p/1080p 的 30→60 为第一目标；只有单帧预算压到约 8–12 ms 后，才评估 60→120。
+
+#### 实验 T3：[VFIformer/BiFormer 的大运动插帧](https://github.com/JunHeum/BiFormer)
+
+1. 用 SNU-FILM hard/extreme、快速相机旋转和 disocclusion 场景比较 VFIformer、BiFormer、FILM、Mob-FGSR-I。
+2. 分离 Transformer attention、flow/cost volume、warp 和 synthesis 时间，判断真正热点是否在 attention。
+3. 用引擎 MV 替换或辅助 learned flow，验证能否缩小网络并降低大运动误差。
+
+#### 实验 T4：[SeedVR2 离线 teacher](https://huggingface.co/spaces/ByteDance-Seed/SeedVR2-3B)
+
+1. 先使用 Hugging Face Space 或租用 H100，不在 M4 Pro 下载 13.6 GB 权重硬跑。
+2. 只选择无 UI 的离线序列，比较 SeedVR2、VRT 和原生 HR ground truth；统计 hallucination、文字错误与 temporal consistency。
+3. 若画质收益明确，用它生成训练/增强数据蒸馏到 RSTT-S/HiT-SR 类小模型，而不是部署 SeedVR2 本体。
+
+### 对移动 GPU 芯片路线的判断
+
+1. **最值得做的是 RSTT-S，而不是 SeedVR2。** 前者是真正联合 STVSR、checkpoint 仅约 21 MB；后者即使 one-step 也需要 3B 参数和 H100 级显存。
+2. **Transformer 优势在大运动和长距离依赖，代价主要是激活与数据搬运。** 移动架构应关注 fused QKV、window attention、online softmax、LayerNorm、transpose-free layout 和片上 KV/feature reuse。
+3. **不要丢掉引擎先验。** 纯视频 Transformer 花大量计算重新估计运动；移动游戏已经提供 MV、depth、camera matrix 和 UI mask，应将这些信息注入网络以缩小模型。
+4. **优先混合架构。** 可用传统 SGSR2/ASR 负责稳定 SR，用小 Transformer 只修复 disocclusion/大运动；或让传统 warp 先对齐，再让 attention 处理残差，通常比全帧大 Transformer 更符合功耗预算。
+5. **训练和部署要分开。** VRT/SeedVR2 可作为 teacher，目标芯片部署 RSTT-S 的裁剪/蒸馏/INT8 版本或自研 window-attention 小模型。
+6. **先验证算子栈。** 若 NPU 不高效支持动态 window、softmax、LayerNorm、reshape/transpose 和多尺度 feature cache，理论 MAC 很低也可能被内存与调度拖垮。
+
 ## 不购买开发板也能完成的实验
 
 ### [实验 A：离线数据与画质基准](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
@@ -323,7 +485,7 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 1. 统一保存 native high-resolution ground truth、low-resolution color、depth、motion vector、exposure、jitter 和 UI mask。
 2. 为中间时刻离线渲染真实 ground-truth frame，不要把相邻帧简单平均当真值。
-3. 统一运行 bilinear、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library)、[Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR)、[Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines)。
+3. 统一运行 bilinear、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library)、[Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR)、[Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines)、[Swin2SR](https://huggingface.co/caidas/swin2SR-lightweight-x2-64) 和 [RSTT-S](https://github.com/llmpass/RSTT)。
 4. 输出 PSNR、SSIM、[LPIPS](https://github.com/richzhang/PerceptualSimilarity)、[FLIP](https://github.com/NVlabs/flip)、temporal warping error 和 flicker 曲线。
 5. 保存 error map，而不只保存单一平均分。
 
@@ -388,7 +550,7 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 ### [第 2 周：空间与时域超分基线](https://github.com/SnapdragonGameStudios/snapdragon-gsr)
 
-- 跑 bilinear/bicubic、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library) 或 [FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2)。
+- 跑 bilinear/bicubic、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library)、[FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2)，再加入 [Swin2SR lightweight](https://huggingface.co/caidas/swin2SR-lightweight-x2-64) 和 [HiT-SR](https://github.com/XiangZ-0/HiT-SR) 的 Transformer 空间基线。
 - 扫描 1.5×、1.7×、2×。
 - 比较静态、运动、遮挡、透明和粒子场景。
 
@@ -413,6 +575,7 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 ### [第 5 周：神经路线](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
 - 跑 [Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines) 预训练模型和样例。
+- 跑 [RSTT-S](https://github.com/llmpass/RSTT) checkpoint，建立端到端 Transformer 超分插帧基线。
 - 使用 [Model Gym](https://github.com/arm/neural-graphics-model-gym-examples) 完成一次小规模 fine-tune 和 QAT。
 - 对比 FP16/INT8、GPU/NPU/模拟层。
 
@@ -510,13 +673,15 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 ## 最终优先清单
 
-如果只做六套实验，建议按以下顺序：
+如果只做八套实验，建议按以下顺序：
 
 1. [Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR)：最贴近移动 GPU 超分插帧联合目标。
 2. [Qualcomm SGSR2 Vulkan Sample](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/tree/main/samples/sgsr2)：最容易开始的移动时域超分。
 3. [Qualcomm AFME Sample](https://github.com/SnapdragonGameStudios/adreno-gpu-opengl-es-code-sample-framework/tree/main/samples/amfe_power_saving)：研究驱动/硬件外推接口。
 4. [Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library)：研究 FSR2 如何移动化。
 5. [Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines)：研究开放神经超分、光流和插帧协同。
-6. [AMD FSR 3.1](https://gpuopen.com/fidelityfx-super-resolution-3/)：研究完整桌面级系统、UI、swapchain 和 pacing。
+6. [RSTT-S](https://github.com/llmpass/RSTT)：建立端到端 Transformer 联合超分插帧基线，并分析 attention 激活带宽。
+7. [AMD FSR 3.1](https://gpuopen.com/fidelityfx-super-resolution-3/)：研究完整桌面级系统、UI、swapchain 和 pacing。
+8. [Swin2SR lightweight / HiT-SR](https://huggingface.co/caidas/swin2SR-lightweight-x2-64)：验证 Hugging Face 模型链路和轻量 window attention 算子；只作为空间 SR 基线。
 
 购买顺序建议是：先用现有 M4 Pro 和一台 Windows GPU 主机完成离线与桌面对照；然后采购或借用一台 Snapdragon 8 Gen 3/8 Elite 手机；只有需要持续自动化、外接功耗仪和稳定 IO 时，再购买 C8550 或 RB3 Gen 2 开发板。
