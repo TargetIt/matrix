@@ -35,6 +35,7 @@
 
 **核心算法**
 
+- **算法大类：传统图形/图像算法，渲染器辅助的时域超分 + 帧插值/外推；运行时非神经网络。** LUT 权重虽由离线学习得到，但部署后只有 compute shader、查表和重采样，不能归为神经网络推理方案。
 - 输入相邻真实渲染帧的 color、depth 和 motion vector；插值路径先做 depth-aware motion splatting，以深度竞争处理前后景，再得到中间时刻的双向运动。
 - 外推路径只使用当前帧和历史帧预测未来运动，通过运动传播与空洞填补处理未来时刻新暴露的区域；随后统一执行 warp、遮挡修复和 blend。
 - 超分路径采用时域累积，并用学习得到的 LUT 保存 16 像素邻域重采样权重；权重推理已离线折叠进查找表，运行时没有神经网络、TensorRT 或 NPU 依赖。
@@ -71,6 +72,7 @@
 
 **核心算法**
 
+- **算法大类：传统非神经网络时域超分（TAAU）。** 它依赖运动矢量和历史帧，不使用 CNN/Transformer、模型权重或 NPU。
 - SGSR2 是非神经网络 TAAU：先把低分辨率 color、depth、motion vector 转换为时域重投影需要的缓冲，再用历史帧重投影、历史有效性判断和当前帧信息重建高分辨率结果。
 - 放大阶段使用为移动 GPU 优化的 Lanczos 类重建，并可追加锐化；官方同时给出两遍 compute、两遍 fragment 和三遍 compute 三种组织方式。
 - fragment 版本把工作放进图形管线，尽量利用 tile/GMEM 驻留和固定功能采样；compute 版本则更便于异步调度和通用移植，两者算法目标相同但访存路径不同。
@@ -107,6 +109,7 @@ Qualcomm 在 Snapdragon 8 Gen 3、1260×2800 输出下公布的数据很有架�
 
 **核心算法**
 
+- **算法大类：专用硬件/驱动黑盒的帧外推。** 公开接口表现为 motion estimation + motion-compensated extrapolation；Qualcomm 未公开内部实现，无法确认其内核是否含神经网络，因此不能把它标成可复现的传统算法或神经算法。
 - AFME 是帧外推而非双帧插值：应用交替提交真实渲染帧和 `glExtrapolateTex2DQCOM` 生成帧，驱动根据之前两张 color texture 推断运动并预测下一时刻画面。
 - Motion Estimation 样例展示由 reference/target image 生成运动矢量纹理；AFME 把运动估计、遮挡处理和重建封装在 Qualcomm 驱动/硬件扩展中，应用侧主要负责纹理、同步和 present 节奏。
 - 因为不等待未来帧，外推延迟低于插值，但新暴露区域没有真实未来信息，快速旋转、边界和非线性动画更容易出错。
@@ -134,6 +137,7 @@ AFME 样例每隔一帧停止传统渲染，通过 `glExtrapolateTex2DQCOM` 从�
 
 **核心算法**
 
+- **算法大类：传统非神经网络时域超分（TAAU），由 FSR 2 系算法移动化。** 核心是运动补偿重投影、历史拒绝/累积和空间重建，不需要模型推理。
 - ASR 从 FSR 2.2.2 演化而来，是非神经时域超分：用当前低分辨率 color、depth、motion vector、jitter/exposure 和历史高分辨率结果完成重投影。
 - 主要阶段包括深度/运动矢量重建与膨胀、disocclusion 和历史置信度判断、当前帧重建、时域累积以及可选锐化。
 - Quality、Balanced、Performance 变体通过精度、采样和历史处理取舍降低带宽与算力，重点适配移动 tile-based GPU，而不是简单改变输入分辨率。
@@ -161,6 +165,7 @@ Arm ASR 基于 AMD FSR 2.2.2，针对移动带宽和算力做了 Quality、Balan
 
 **核心算法**
 
+- **算法大类：神经网络方案。** NSS 是量化神经时域超分；NFRU 是“神经网络 + 引擎运动矢量 + optical flow”的混合式双帧插值，目标执行形式为 Vulkan ML data graph。
 - NSS 是量化神经时域超分：融合低分辨率 color、depth、motion vector 和历史信息，通过 Vulkan tensor/data-graph 执行模型，输出高分辨率帧；Model Gym 提供训练、微调、QAT 和 VGF 导出链路。
 - NFRU 是双帧插值：融合前后真实帧、引擎 motion vector、depth、内部 optical-flow correspondence 和神经网络，在两个真实帧之间生成一帧；固定增加一个真实渲染帧的等待延迟。
 - NFRU 把 prepare、optical flow/data graph、warp/disocclusion 和 compose 暴露为可观察阶段，适合比较“全 GPU”“GPU + NPU”以及固定功能光流单元三种映射。
@@ -196,6 +201,7 @@ NFRU 生成两个真实渲染帧之间的一帧，采用固定的一个渲染帧
 
 **核心算法**
 
+- **算法大类：传统非神经网络时域超分 + 传统光流/运动补偿帧插值。** FSR 3.1 运行时没有神经模型或训练权重；不要与 AMD 后续采用机器学习的 FSR 路线混淆。
 - FSR 3.1 的超分部分是非神经 TAAU，使用低分辨率 color、depth、motion vector、jitter、exposure 和 reactive mask 做历史重投影、锁定/拒绝、累积与重建。
 - Frame Generation 同时利用引擎 motion vector/depth 与 SDK optical flow，把前后两张显示分辨率真实帧重投影到中间时刻，再处理 disocclusion、融合和 UI composition；它是插值，必须等待后一张真实帧。
 - proxy swapchain 和 frame-pacing 层负责在真实 present 之间插入生成帧；3.1 的 SR/FG 可解耦，便于只保留 FG 并换用其他 upscaler。
@@ -225,6 +231,7 @@ FSR 3.1 把 temporal upscaling、optical flow、frame interpolation、swapchain 
 
 **核心算法**
 
+- **算法大类：专有神经网络帧插值 + 专用 optical-flow hardware 的混合方案。** AI 网络和权重闭源，Streamline 只开放集成框架。
 - DLSS Frame Generation 以当前/前一真实帧、depth、密集 motion vector、相机常量和 HUD-less color 为输入，结合 RTX optical-flow accelerator 的像素运动与引擎几何运动，再由专有 AI 网络生成中间帧。
 - Streamline 负责资源 tag、frame token、插件调度和 swapchain/present 集成；Reflex 通过调整 CPU 提交和渲染队列降低插帧增加的端到端延迟。
 - 网络结构、训练数据和 DLSS-G 推理内核闭源；可复现的是输入协议、UI/HDR/动态分辨率处理、时序同步与性能统计，不是算法权重。
@@ -251,6 +258,7 @@ Streamline 框架、接口、样例和编程指南是开放的，但 `sl.dlss_g.
 
 **核心算法**
 
+- **算法大类：专有 AI/神经网络帧插值。** 它由引擎 motion vector/depth 辅助，并通过 compute shader 和闭源运行库执行；不是可查看权重的开源神经模型。
 - XeSS-FG 在 present 前执行一组 compute pass，融合前后真实帧、当前到前一帧的 motion vector、depth 和 frame constants，通过专有 AI 插值内核合成中间帧。
 - SDK 用 proxy `IDXGISwapChain4` 管理生成帧、UI 和 pacing；可提交 HUD-less color 或选择 UI texture/回调等合成模式。
 - Xe Low Latency（XeLL）是强制组成，用于限制渲染队列和校准帧标识；算法二进制可跨厂商运行，但训练和网络实现不开放。
@@ -271,6 +279,7 @@ XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 com
 
 **核心算法**
 
+- **算法大类：Apple 专有机器学习时域超分 + 机器学习帧插值。** API 可调用、算法和权重闭源，属于黑盒神经图形方案。
 - MetalFX Temporal Scaler 使用低分辨率 color、depth、motion vector、jitter 和历史帧执行 Apple 专有时域/机器学习超分；Frame Interpolator 再读取前后真实 color、motion、depth，生成一张中间显示帧。
 - 推荐在 tone mapping 后执行 frame interpolation；UI 可离屏提供给 interpolator、在生成帧后独立合成，或按显示帧重绘，present thread 负责均匀 pacing。
 - 模型、训练方法和 kernel 闭源，只能把 MetalFX 当作 API、画质、时延、内存和功耗的黑盒对照。
@@ -291,6 +300,7 @@ XeSS 3 SDK 提供 SR、Frame Generation 和 Xe Low Latency。FG 以一系列 com
 
 **核心算法**
 
+- **算法大类：神经网络帧生成。** ExtraNet 是引擎 G-buffer/运动信息辅助的单向未来帧外推；FILM 是只输入两张 RGB 图像的双向帧插值，两者都需要训练模型和推理运行时。
 - ExtraNet 做未来帧外推：利用延迟渲染/交错帧产生的 G-buffer 与遮挡运动信息，把 backward motion vector splat 成近似 forward/occlusion motion，再由神经网络预测未来 shading/base color 并修复 disocclusion。
 - FILM 是纯图像双帧插值：共享卷积权重的多尺度特征提取器在不同分辨率建立对应关系，再合成中间帧；训练只需图像 triplet，不依赖预训练 optical-flow/depth 网络。
 - ExtraNet 更贴近低延迟游戏外推和引擎协作；FILM 更适合建立“无 depth/MV 的视频算法”画质下限/上限对照，不应与引擎感知方案混作同一条件。
@@ -305,7 +315,7 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 ## 不购买开发板也能完成的实验
 
-### 实验 A：离线数据与画质基准
+### [实验 A：离线数据与画质基准](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
 
 资源：[Arm Neural Graphics 数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset) · [Mob-FGSR 数据与代码](https://github.com/Mob-FGSR/MobFGSR) · [NVIDIA FLIP](https://github.com/NVlabs/flip)
 
@@ -313,56 +323,62 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 1. 统一保存 native high-resolution ground truth、low-resolution color、depth、motion vector、exposure、jitter 和 UI mask。
 2. 为中间时刻离线渲染真实 ground-truth frame，不要把相邻帧简单平均当真值。
-3. 统一运行 bilinear、SGSR1、SGSR2/ASR、Mob-FGSR、NSS/NFRU。
-4. 输出 PSNR、SSIM、LPIPS、FLIP、temporal warping error 和 flicker 曲线。
+3. 统一运行 bilinear、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library)、[Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR)、[Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines)。
+4. 输出 PSNR、SSIM、[LPIPS](https://github.com/richzhang/PerceptualSimilarity)、[FLIP](https://github.com/NVlabs/flip)、temporal warping error 和 flicker 曲线。
 5. 保存 error map，而不只保存单一平均分。
 
 最低硬件：现有电脑即可完成数据检查和指标；Mob-FGSR 原始运行需要 OpenGL 4.3 的 Linux/Windows GPU。
 
-### 实验 B：当前 M4 Pro 的 MetalFX 黑盒实验
+### [实验 B：当前 M4 Pro 的 MetalFX 黑盒实验](https://developer.apple.com/videos/play/wwdc2025/211/)
+
+资源：[MetalFX 文档](https://developer.apple.com/documentation/metalfx) · [Frame Interpolator API](https://developer.apple.com/documentation/metalfx/mtlfxframeinterpolatordescriptor) · [WWDC25 示例与讲解](https://developer.apple.com/videos/play/wwdc2025/211/)
 
 工作内容：
 
 - 构造一个含静态背景、动态物体、透明粒子、UI 和快速相机移动的小型 Metal 场景。
 - 依次运行 native、spatial upscale、temporal upscale、frame interpolation、upscale + interpolation。
-- 用 Metal GPU capture 和 Performance HUD 记录各阶段时间、内存和 present cadence。
+- 用 [Metal GPU capture](https://developer.apple.com/documentation/xcode/capturing-a-metal-workload-in-xcode) 和 [Metal Performance HUD](https://developer.apple.com/videos/play/tech-talks/110339/) 记录各阶段时间、内存和 present cadence。
 - 故意反转 motion vector、改变 scale、错误设置 exposure，建立输入错误到伪影的映射。
 
 这套实验能快速理解接口，但不能测 Android tile GPU，也不能看到 MetalFX 内核。
 
-### 实验 C：桌面 FSR 3.1、DLSS-FG、XeSS-FG 对照
+### [实验 C：桌面 FSR 3.1、DLSS-FG、XeSS-FG 对照](https://gpuopen.com/fidelityfx-super-resolution-3/)
+
+资源：[AMD FSR 3](https://gpuopen.com/fidelityfx-super-resolution-3/) · [NVIDIA Streamline Sample](https://github.com/NVIDIA-RTX/Streamline_Sample) · [Intel XeSS-FG Sample](https://github.com/intel/xess/tree/main/samples/basic_sample_frame_generation)
 
 最低硬件：Windows 11 + D3D12 GPU；DLSS-FG 另需支持的 RTX GPU，XeSS-FG 的完整能力优先 Intel Arc。
 
 工作内容：
 
-- 用各自官方 sample 对齐 1080p/1440p、1.5×/1.7×/2×。
+- 用 [FSR](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)、[DLSS-FG](https://github.com/NVIDIA-RTX/Streamline) 和 [XeSS-FG](https://github.com/intel/xess) 各自官方 sample 对齐 1080p/1440p、1.5×/1.7×/2×。
 - 统一关闭 motion blur，先关闭 async compute。
 - 检查 UI 分离、HUD-less color、camera cut、动态分辨率和 VRR。
 - 将测试目的限定为系统接口、画质上限和 pacing，不把桌面耗时直接外推到移动 GPU。
 
-### 实验 D：Arm NSS/NFRU 模拟层
+### [实验 D：Arm NSS/NFRU 模拟层](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
-在没有新一代神经 GPU 的情况下，可在 Linux/Windows 使用 Vulkan ML emulation layers 跑 Sponza 和 EXR dataset mode，并用 Model Gym 做训练、fine-tune、QAT 和导出。这是购买硬件之前研究 neural workload、tensor shape、激活生命周期和算子支持的最佳入口。
+资源：[Neural Graphics SDK](https://github.com/arm/neural-graphics-sdk-for-game-engines) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) · [Model Gym Examples](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
+
+在没有新一代神经 GPU 的情况下，可在 Linux/Windows 使用 [Vulkan ML emulation layers](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) 跑 Sponza 和 EXR dataset mode，并用 [Model Gym](https://github.com/arm/neural-graphics-model-gym-examples) 做训练、fine-tune、QAT 和导出。这是购买硬件之前研究 neural workload、tensor shape、激活生命周期和算子支持的最佳入口。
 
 ## 设备和开发板选择
 
 | 设备 | 能做什么 | 优点 | 限制 | 建议 |
 | --- | --- | --- | --- | --- |
-| 现有 Apple M4 Pro | MetalFX temporal SR + frame interpolation | 无需购买，接口完整 | 内核闭源、Metal 专用 | 立即做黑盒和接口实验 |
-| Snapdragon 8 Gen 3/8 Elite Android 手机 | SGSR2、Vulkan 样例、Mob-FGSR 移植、部分 AFME | 真实屏幕、Android compositor、温控和功耗最接近移动产品 | root/counter/驱动扩展权限因机型而异 | 第一台外部移动测试设备 |
+| 现有 Apple M4 Pro | [MetalFX temporal SR + frame interpolation](https://developer.apple.com/documentation/metalfx) | 无需购买，接口完整 | 内核闭源、Metal 专用 | 立即做黑盒和接口实验 |
+| Snapdragon 8 Gen 3/8 Elite Android 手机 | [SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Vulkan 样例](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework)、[Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR) 移植、部分 [AFME](https://github.com/SnapdragonGameStudios/adreno-gpu-opengl-es-code-sample-framework/tree/main/samples/amfe_power_saving) | 真实屏幕、Android compositor、温控和功耗最接近移动产品 | root/counter/驱动扩展权限因机型而异 | 第一台外部移动测试设备 |
 | [Thundercomm C8550 Dev Kit](https://www.thundercomm.com/product/c8550-development-kit/) | Adreno 740、Android、Vulkan、外接显示与稳定供电 | 接口多，便于持续 profiling 和自动化 | 当前售价约 1,599 美元；SoC 是 QCS8550/8 Gen 2 同级，不代表最新手机 | 需要实验室自动化时再买 |
 | [Qualcomm RB3 Gen 2](https://www.qualcomm.com/developer/hardware/rb3-gen-2-development-kit) | QCS6490、Adreno 642L、Android/Linux/Vulkan | 官方开发板，适合低端压力与兼容测试 | GPU 较老；不能假设支持 AFME 专有扩展 | 做 portability/低带宽档，不做峰值代表 |
-| Immortalis-G720/G925 Android 手机 | Arm ASR、Arm Performance Studio、NSS/NFRU 兼容性研究 | 最适合验证 Arm 移动优化与 tile GPU counters | 地区/机型 SoC 版本需核实；新 Vulkan ML 扩展未必存在 | 第二类跨架构对照设备 |
-| Windows RTX/Radeon/Arc PC | FSR 3、DLSS、XeSS 完整 reference sample | 工具和样例成熟 | 功耗、内存体系与移动 GPU差异大 | 只做参考上限和接口研究 |
-| Jetson Orin | TensorRT 光流/神经模型原型 | CUDA/TensorRT 方便 | 不是手机 GPU；不等于能运行桌面 DLSS-FG | 不为本项目单独购买 |
+| Immortalis-G720/G925 Android 手机 | [Arm ASR](https://github.com/arm/accuracy-super-resolution)、[Arm Performance Studio](https://developer.arm.com/Tools%20and%20Software/Arm%20Performance%20Studio)、[NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines) 兼容性研究 | 最适合验证 Arm 移动优化与 tile GPU counters | 地区/机型 SoC 版本需核实；新 Vulkan ML 扩展未必存在 | 第二类跨架构对照设备 |
+| Windows RTX/Radeon/Arc PC | [FSR 3](https://gpuopen.com/fidelityfx-super-resolution-3/)、[DLSS](https://github.com/NVIDIA-RTX/Streamline_Sample)、[XeSS](https://github.com/intel/xess/tree/main/samples/basic_sample_frame_generation) 完整 reference sample | 工具和样例成熟 | 功耗、内存体系与移动 GPU 差异大 | 只做参考上限和接口研究 |
+| [Jetson Orin](https://developer.nvidia.com/embedded/jetson-orin) | [TensorRT](https://developer.nvidia.com/tensorrt) 光流/神经模型原型 | CUDA/TensorRT 方便 | 不是手机 GPU；不等于能运行桌面 DLSS-FG | 不为本项目单独购买 |
 | FPGA | 自定义 warp/flow/tensor 单元 | 可验证数据通路和 RTL | 接入真实 Android 图形栈、DDR 和 display pacing 成本高 | 算法和 workload 稳定后再做 |
 
 对于这一课题，真实 Android 手机往往比普通开发板更有价值，因为插帧是否成功不仅取决于 shader 时间，还取决于 display compositor、VSync/VRR、swapchain、触控延迟、DVFS、温升和持续功耗。开发板更适合自动化、外接功耗仪和长时间 trace。
 
 ## 推荐的八周实验路线
 
-### 第 1 周：建立统一数据格式
+### [第 1 周：建立统一数据格式](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
 
 - 定义 color、depth、motion vector、exposure、jitter、reactive mask、UI、frame ID 和 camera matrices。
 - 从一个可控场景导出 native HR、low-res 和中间时刻 ground truth。
@@ -370,15 +386,15 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 验收：同一序列能被多个算法读取，motion vector 方向、单位和 scale 有自动检查。
 
-### 第 2 周：空间与时域超分基线
+### [第 2 周：空间与时域超分基线](https://github.com/SnapdragonGameStudios/snapdragon-gsr)
 
-- 跑 bilinear/bicubic、SGSR1、SGSR2、Arm ASR 或 FSR2。
+- 跑 bilinear/bicubic、[SGSR1/SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr)、[Arm ASR](https://github.com/arm/accuracy-super-resolution-generic-library) 或 [FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2)。
 - 扫描 1.5×、1.7×、2×。
 - 比较静态、运动、遮挡、透明和粒子场景。
 
 验收：输出画质指标、error map、单 pass 时间和外部内存流量。
 
-### 第 3 周：Mob-FGSR 插值和外推
+### [第 3 周：Mob-FGSR 插值和外推](https://github.com/Mob-FGSR/MobFGSR)
 
 - 跑 I、E、SR、ISR、ESR 五种模式。
 - 拆分 motion splat、hole filling、warp、blend、LUT SR。
@@ -386,31 +402,31 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 验收：明确插值和外推的画质—延迟曲线，不只报告显示 FPS。
 
-### 第 4 周：Android Vulkan 移植
+### [第 4 周：Android Vulkan 移植](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/tree/main/samples/sgsr2)
 
-- 先跑 Qualcomm SGSR2 Vulkan sample。
-- 把 Mob-FGSR 的关键 pass 迁到同一个 Vulkan harness。
+- 先跑 [Qualcomm SGSR2 Vulkan sample](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/tree/main/samples/sgsr2)。
+- 把 [Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR) 的关键 pass 迁到同一个 Vulkan harness。
 - 同时保留 compute 与 fragment 两条路径。
 
 验收：可在目标手机或内部开发板一键切换 native、SGSR2、Mob-FGSR，并导出 trace。
 
-### 第 5 周：神经路线
+### [第 5 周：神经路线](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
-- 跑 Arm NSS/NFRU 预训练模型和样例。
-- 使用 Model Gym 完成一次小规模 fine-tune 和 QAT。
+- 跑 [Arm NSS/NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines) 预训练模型和样例。
+- 使用 [Model Gym](https://github.com/arm/neural-graphics-model-gym-examples) 完成一次小规模 fine-tune 和 QAT。
 - 对比 FP16/INT8、GPU/NPU/模拟层。
 
 验收：列出每层算子、tensor shape、权重、激活峰值、执行位置和不支持算子。
 
-### 第 6 周：GPU/芯片 profiling
+### [第 6 周：GPU/芯片 profiling](https://developer.android.com/agi/frame-trace/frame-profiler)
 
-- 用 [Android GPU Inspector](https://developer.android.com/agi/frame-trace/frame-profiler)、[Arm Performance Studio](https://developer.arm.com/Tools%20and%20Software/Arm%20Performance%20Studio)、Snapdragon Profiler 或内部工具抓取 counters。
+- 用 [Android GPU Inspector](https://developer.android.com/agi/frame-trace/frame-profiler)、[Arm Performance Studio](https://developer.arm.com/Tools%20and%20Software/Arm%20Performance%20Studio)、[Snapdragon Profiler](https://www.qualcomm.com/developer/software/snapdragon-profiler) 或内部工具抓取 counters。
 - 统计 ALU、texture、atomic、occupancy、cache、external bandwidth、tile load/store、async overlap。
 - 测试 FP32、FP16、R11G11B10、RGBA8、RG16F 等格式。
 
 验收：得到各 pass 的 compute-bound/memory-bound 分类和带宽账本。
 
-### 第 7 周：显示、低延迟和 UI
+### [第 7 周：显示、低延迟和 UI](https://github.com/NVIDIA-RTX/Streamline/blob/main/docs/ProgrammingGuideDLSS_G.md)
 
 - 接入独立 UI 合成、loading/menu bypass、camera cut reset。
 - 测 VSync、VRR、frame limiter、swapchain image 数和 present pacing。
@@ -418,7 +434,7 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 
 验收：无周期性重复帧、长短帧交替、UI 扭曲和历史未重置问题。
 
-### 第 8 周：持续功耗与架构提案
+### [第 8 周：持续功耗与架构提案](https://developer.android.com/agi)
 
 - 进行至少 20–30 分钟持续测试，记录温度、频率、功耗、FPS 和 1% low。
 - 比较 native、低分辨率 + SR、低分辨率 + SR + FG。
@@ -473,10 +489,10 @@ ExtraNet 研究低延迟 frame extrapolation，并提供数据生成、训练和
 以下是依据公开方案作出的架构推论，需要用上述实验验证：
 
 1. **优先解决带宽，而不只是增加 MAC。** 1080p RGBA8 单张就是约 8.3 MB；多个全分辨率 history、flow、warp 和 output 每帧反复读写，很快达到数 GB/s。
-2. **保留 fragment/tile 路径。** SGSR2 的公开结果说明，在 tile-based GPU 上 fragment 两遍可能显著胜过 compute。
-3. **增加低成本 warp、splat、gather 与原子支持。** Mob-FGSR 的关键热点比通用大模型 GEMM 更像图像重采样和冲突消解。
+2. **保留 fragment/tile 路径。** [SGSR2](https://github.com/SnapdragonGameStudios/snapdragon-gsr) 的公开结果说明，在 tile-based GPU 上 fragment 两遍可能显著胜过 compute。
+3. **增加低成本 warp、splat、gather 与原子支持。** [Mob-FGSR](https://github.com/Mob-FGSR/MobFGSR) 的关键热点比通用大模型 GEMM 更像图像重采样和冲突消解。
 4. **让 GPU、神经单元和显示单元直接共享资源。** 若中间 tensor/flow 必须回写系统内存，专用神经单元节省的算力可能被搬运抵消。
-5. **把 motion vector、depth、UI 和 frame ID 变成稳定 ABI。** DLSS、FSR、XeSS、MetalFX 与 NFRU 都依赖一致的资源标注和历史管理。
+5. **把 motion vector、depth、UI 和 frame ID 变成稳定 ABI。** [DLSS](https://github.com/NVIDIA-RTX/Streamline)、[FSR](https://gpuopen.com/fidelityfx-super-resolution-3/)、[XeSS](https://github.com/intel/xess)、[MetalFX](https://developer.apple.com/documentation/metalfx) 与 [NFRU](https://github.com/arm/neural-graphics-sdk-for-game-engines) 都依赖一致的资源标注和历史管理。
 6. **显示队列和低延迟是功能的一部分。** proxy swapchain、present pacing、VRR、frame limiter 和触控采样不能等算法完成后再补。
 7. **插值与外推最好同时保留。** 普通游戏可偏向插值画质，VR/高交互场景可偏向外推延迟。
 8. **支持可诊断中间输出。** motion、depth、disocclusion、reactive、optical flow、warped frames 和 UI mask 的 debug view 会显著缩短集成周期。
