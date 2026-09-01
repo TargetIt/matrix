@@ -162,20 +162,29 @@ Arm ASR 基于 AMD FSR 2.2.2，针对移动带宽和算力做了 Quality、Balan
 
 ### 5. [Arm NSS/NFRU：开放的移动神经超分与插帧](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
-直达：[SDK 用户指南](https://github.com/arm/neural-graphics-sdk-for-game-engines/blob/main/docs/user_guide.md) · [训练与 QAT Notebook](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset) · [NSS 模型](https://huggingface.co/Arm/neural-super-sampling) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan)
+直达：[SDK 用户指南](https://github.com/arm/neural-graphics-sdk-for-game-engines/blob/main/docs/user_guide.md) · [Model Gym 训练源码](https://github.com/arm/neural-graphics-model-gym) · [训练与 QAT Notebook](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset) · [NSS 模型与权重](https://huggingface.co/Arm/neural-super-sampling) · [NFRU 模型与权重](https://huggingface.co/Arm/neural-frame-rate-upscaling) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan)
+
+模型源码直达：[NSS v1 完整 pipeline](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/model_v1.py) · [NSS v1 轻量网络 `model_blocks_v1.py`](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/model_blocks_v1.py) · [NSS 质量档配置](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/quality_modes.py) · [NFRU v1 完整 pipeline](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nfru/model/nfru_v1.py) · [NFRU v1 轻量网络 `nfru_v1_nn.py`](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nfru/model/nfru_v1_nn.py)
 
 **核心算法**
 
-- **算法大类：神经网络方案。** NSS 是量化神经时域超分；NFRU 是“神经网络 + 引擎运动矢量 + optical flow”的混合式双帧插值，目标执行形式为 Vulkan ML data graph。
-- NSS 是量化神经时域超分：融合低分辨率 color、depth、motion vector 和历史信息，通过 Vulkan tensor/data-graph 执行模型，输出高分辨率帧；Model Gym 提供训练、微调、QAT 和 VGF 导出链路。
-- NFRU 是双帧插值：融合前后真实帧、引擎 motion vector、depth、内部 optical-flow correspondence 和神经网络，在两个真实帧之间生成一帧；固定增加一个真实渲染帧的等待延迟。
+- **算法大类：轻量卷积神经网络与传统图形算法组成的混合方案，不是 Transformer。** NSS 是“神经参数预测 + 时域/KPN 重建”；NFRU 是“神经参数预测 + block matching optical flow + 引擎 MV + warp/compose”，目标执行形式为量化 Vulkan ML data graph。
+- [NSS v1 轻量网络](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/model_blocks_v1.py) 是小型 U-Net 风格卷积 encoder-decoder：12 通道输入，主干仅使用 16/32/64 通道、3×3 Conv、ReLU、三次 stride-2 下采样、nearest 2× 上采样和 skip concatenation，不含 attention、Transformer、deformable convolution 或大矩阵网络。
+- NSS 网络不直接生成 RGB，而是输出两组参数：KPN head 在较低分辨率预测空间滤波权重，temporal head 输出 4 通道时域融合参数；外围 [NSS v1 pipeline](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/model_v1.py) 再结合 color、depth、motion vector、jitter、history、disocclusion 和 exposure 完成最终重建。按公开层定义估算，high 网络约 14.8 万可训练参数，low/mid 约 14.3 万参数。
+- [NSS 质量档](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/quality_modes.py) 不是简单换分辨率：high 使用全输入分辨率预处理、6×6 KPN（36 taps）和 3×3 filter；low/mid 把神经预处理降到半分辨率、depth scatter 降到四分之一分辨率，并使用 4×4 KPN（16 taps）与稀疏 2×2 filter。mid 比 low 多保留 Catmull history sampling。
+- [NFRU v1 轻量网络](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nfru/model/nfru_v1_nn.py) 是 16 通道输入、32 通道隐藏层、16 通道多分支的卷积 autoencoder；瓶颈并行使用 1×1、3×3、5×5、7×7 receptive fields，最终只输出 4 通道 learned motion/synthesis parameters。
+- NFRU 是双帧插值：外围 [NFRU v1 pipeline](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nfru/model/nfru_v1.py) 用前后帧、depth、引擎 motion vector 和六层 block-matching optical flow 做 warp、空洞处理与融合，神经网络只学习其中的小型参数预测部分；固定增加一个真实渲染帧的等待延迟。
 - NFRU 把 prepare、optical flow/data graph、warp/disocclusion 和 compose 暴露为可观察阶段，适合比较“全 GPU”“GPU + NPU”以及固定功能光流单元三种映射。
+
+轻量级定位：在本报告收录的公开神经超分方案中，NSS v1 比 Swin2SR、HiT-SR、RSTT、VRT 和 SeedVR2 都小得多，应作为移动 GPU/NPU 的第一套神经 SR workload。更严谨的说法是“Arm 当前公开 NSS v1 的轻量实现”，不能据此推断它是 Arm 所有未公开模型中的绝对最小网络。
 
 **复现平台要求**
 
-- SDK 支持 Windows 11 x64、Linux x64 和 Android AArch64，图形后端为 Vulkan；需要 Python 3、CMake（SDK 文档限定 3.21–3.31）和 Vulkan SDK，官方推荐 1.4.321.0。
+- 运行时 SDK 支持 Windows 11 x64、Linux x64 和 Android AArch64，图形后端为 Vulkan；需要 Python 3、CMake（SDK 文档限定 3.21–3.31）和 Vulkan SDK，官方推荐 1.4.321.0。
 - Windows 需要 Visual Studio 2019+；Linux 需要 C++20 工具链；Android 需要 Android Studio 2024.2.1+、NDK r23+、Android SDK 和 JDK 21，官方验证环境为 Android 17。
 - 原生执行依赖 `VK_ARM_tensors`、`VK_ARM_data_graph`，NFRU 还使用 optical-flow data-graph 扩展；设备尚未支持时需加载 Arm Vulkan ML emulation layer。当前图只支持量化 data graph，应重点验证 INT8 精度和模拟层开销。
+- 训练/评估用的 [Neural Graphics Model Gym](https://github.com/arm/neural-graphics-model-gym) 当前要求 Ubuntu 22.04+、Python 3.10–3.12、NVIDIA CUDA GPU、CUDA Toolkit 13.1.1+ 和 Git LFS；Model Gym 代码为 Apache-2.0，但 Hugging Face 权重采用 Arm AI Model Community License，应分别审核。
+- Hugging Face 提供 NSS high FP32/INT8、mid/low INT8 与 NFRU FP32/INT8/VGF 文件；单个 PyTorch checkpoint 约 0.45–0.66 MB，说明该路线的核心优势确实是小模型，而不是依赖大型神经网络堆画质。
 
 这是当前最值得研究的开放神经路线。SDK 包含：
 
@@ -519,7 +528,7 @@ HF 是模型托管平台，不代表页面上的模型经过官方验证，也�
 
 ### [实验 D：Arm NSS/NFRU 模拟层](https://github.com/arm/neural-graphics-sdk-for-game-engines)
 
-资源：[Neural Graphics SDK](https://github.com/arm/neural-graphics-sdk-for-game-engines) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) · [Model Gym Examples](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
+资源：[Neural Graphics SDK](https://github.com/arm/neural-graphics-sdk-for-game-engines) · [Model Gym](https://github.com/arm/neural-graphics-model-gym) · [NSS v1 网络源码](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nss/model/model_blocks_v1.py) · [NFRU v1 网络源码](https://github.com/arm/neural-graphics-model-gym/blob/main/src/ng_model_gym/usecases/nfru/model/nfru_v1_nn.py) · [NSS 权重](https://huggingface.co/Arm/neural-super-sampling) · [NFRU 权重](https://huggingface.co/Arm/neural-frame-rate-upscaling) · [Vulkan ML 模拟层](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) · [Model Gym Examples](https://github.com/arm/neural-graphics-model-gym-examples) · [数据集](https://huggingface.co/datasets/Arm/neural-graphics-dataset)
 
 在没有新一代神经 GPU 的情况下，可在 Linux/Windows 使用 [Vulkan ML emulation layers](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) 跑 Sponza 和 EXR dataset mode，并用 [Model Gym](https://github.com/arm/neural-graphics-model-gym-examples) 做训练、fine-tune、QAT 和导出。这是购买硬件之前研究 neural workload、tensor shape、激活生命周期和算子支持的最佳入口。
 
