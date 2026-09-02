@@ -1,456 +1,652 @@
-# Codex、Claude Code、LangChain、OpenCode 与 DeepSeek Harness 官方指南
+# Codex、Claude Code、LangChain、OpenCode 与 DeepSeek Harness 官方文档全景指南
 
-调研与核验日期：2026-09-02
+调研与逐链接核验日期：2026-09-02
 
-> 本文只用厂商官网、官方文档站和官方 GitHub 组织下的仓库解释各产品能力。文中的“设计建议”和“五层 Harness”是基于这些资料做的横向归纳，不是任何一家厂商的原文。产品迭代很快，涉及版本、默认权限和实验功能时，应点击原文复核。
+> 本文只用厂商官网、官方文档站和官方 GitHub 组织下的仓库说明产品事实。正文严格分为两部分：第一部分按公司/产品纵向梳理，第二部分按 Agent 能力横向比较。文中的“选型判断”和“设计建议”是基于官方资料的综合分析，不冒充厂商原话。
 
-## 先读结论
+## 调研边界与覆盖方法
 
-这五个名字并不处在同一层：
+这五个对象不在同一抽象层：
 
-- **Codex、Claude Code、OpenCode** 是开箱即用的编码智能体。它们已经提供代码搜索、文件修改、命令执行、权限控制、项目指令、技能和子智能体等完整工作环境。
-- **LangChain** 是 Agent 框架，**LangGraph** 是有状态编排运行时，**Deep Agents** 是在二者之上的成品 Harness。它们适合把 Agent 嵌入自己的产品。
-- **DeepSeek Harness（`dsh`）** 是 DeepSeek 官方的插件化 Agent Harness。其卖点不是某个固定 Agent，而是“所有部分都可替换”的 Cordis 插件架构。目前仍是开发者预览。
+- **Codex、Claude Code、OpenCode、Deep Agents Code** 是可以直接完成编码任务的 Agent 产品。
+- **LangChain** 是 Agent 框架，**LangGraph** 是状态化编排运行时，**Deep Agents SDK** 是更完整的 Agent Harness。
+- **DeepSeek Harness（`dsh`）** 是 DeepSeek 官方的插件化 Agent Harness，目前仍处于开发者预览。
 
-如果目标是“更好地使用 Agent”，先精通 Codex 或 Claude Code；如果目标是“设计自己的 Agent 产品”，再学习 LangGraph/Deep Agents 和 DeepSeek Harness 的架构。
+本次没有只看 Overview，而是先审计官方文档目录，再选择每个维度的概念页、指南页和参考页交叉核对：
 
-## 一张表建立全局认识
+| 对象 | 官方目录基线 | 本次覆盖 |
+| --- | --- | --- |
+| Codex | [官方 `llms.txt`](https://learn.chatgpt.com/llms.txt)，当前索引 160 个入口 | CLI、IDE、Cloud、Prompt、配置、指令、Memory、Skill、Plugin、MCP、Hook、权限、沙箱、Goal、Review、Worktree、自动化、SDK、App Server、管理 |
+| Claude Code | [官方文档索引](https://code.claude.com/docs/llms.txt)，当前列出 166 篇英文页面 | 工作原理、Prompt、Context、Cache、Session、Memory、Skill、Hook、MCP、权限、Goal、Subagent、Agent View、Team、Workflow、SDK、部署 |
+| LangChain | [总索引](https://docs.langchain.com/llms.txt)、[LangChain 76 页](https://docs.langchain.com/oss/python/langchain/llms.txt)、[LangGraph 43 页](https://docs.langchain.com/oss/python/langgraph/llms.txt)、[Deep Agents 40 页](https://docs.langchain.com/oss/python/deepagents/llms.txt) | Framework、Runtime、Harness、Coding Agent、State、Memory、Middleware、HITL、Multi-agent、Testing、Observability、Deployment |
+| OpenCode | [官方文档](https://opencode.ai/docs/) 和 [官方文档源码目录](https://github.com/anomalyco/opencode/tree/dev/packages/web/src/content/docs)，当前 36 个顶层页面 | CLI/TUI/Web、配置、Provider、Model、Agent、Rule、Command、Tool、Skill、MCP、Plugin、Permission、Policy、ACP、SDK、Server、CI |
+| DeepSeek Harness | [官方文档站](https://deepseek-harness.github.io/deepseek-harness/)、[官方仓库文档](https://github.com/deepseek-ai/deepseek-harness/tree/master/docs)，含 17 篇中文用户/开发指南和 52 个子系统页 | Web/SDK、Cordis、Profile/Patch、Prompt、Tool、Session、Persistence、Compaction、Skill、Plan、Goal、Subagent、Team、Sandbox、Approval、Telemetry |
 
-| 对象 | 它是什么 | 项目指令/记忆 | 扩展方式 | 多智能体 | 更适合 |
-| --- | --- | --- | --- | --- | --- |
-| [Codex](https://learn.chatgpt.com/docs/codex/cli) | OpenAI 编码智能体与 CLI/SDK | `AGENTS.md` 分层加载 | Skills、MCP、Hooks、SDK、App Server | Subagents，主 Agent 汇总结果 | 日常研发、自动化、基于 Codex 二次开发 |
-| [Claude Code](https://code.claude.com/docs/en/overview) | Anthropic 编码智能体 | `CLAUDE.md`、Rules、Auto memory | Skills、MCP、Hooks、Plugins、Agent SDK | Subagents；实验性 Agent Teams | 日常研发、长任务、团队并行研究/评审 |
-| [LangChain](https://docs.langchain.com/oss/python/langchain/agents) | Agent 构建框架 | Agent state、短期/长期 memory | Tools、Middleware、MCP、LangGraph | Subagents、Handoffs、Skills、Router 等模式 | 构建业务 Agent 和可控工作流 |
-| [OpenCode](https://opencode.ai/docs/) | 开源编码智能体，TUI/客户端-服务器架构 | `AGENTS.md`、instructions | Agents、Skills、MCP、Plugins、Custom tools、SDK | Primary agents + Subagents | 自托管、可换模型、深度定制编码助手 |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | DeepSeek 官方插件化 Harness | 会话事件日志、持久化插件、可接记忆 MCP | Cordis Service/Event/Plugin、Profile、Patch | Subagent 与实验性 Agent Teams 子系统 | 研究插件化 Harness、开发可替换的 Agent 平台 |
+## 快速结论
 
-## Agent 与 Harness 到底是什么
+- 想提高日常研发效率：先精通 Codex 或 Claude Code；重视开源、自托管和多模型时看 OpenCode。
+- 想把 Agent 嵌入自己的业务：先用 LangChain `create_agent`，需要可靠恢复和复杂控制流时下沉 LangGraph，需要成品 Harness 时用 Deep Agents。
+- 想研究 Agent Runtime 的内部模块化：DeepSeek Harness 对 Service、Provider、Consumer、事件、日志和生命周期的拆分最值得阅读，但不应忽略其开发者预览和未完成安全审计的状态。
+- Multi-agent 不是成熟度标志。项目指令、状态、验证、权限和恢复机制没有做好时，增加 Agent 数量只会放大成本与冲突。
 
-LangChain 官方给出了很实用的定义：[Agent 是“模型循环调用工具，直到任务完成”](https://docs.langchain.com/oss/python/langchain/agents)；Harness 是包在循环外面的 prompt、tools、middleware 等运行设施。可以把完整系统理解为：
+# 第一部分：按公司与产品纵向梳理
+
+## 1. OpenAI Codex
+
+### 1.1 官方产品地图
+
+Codex 不是只有一个 CLI。官方把主要工作面拆成：
+
+- [Codex CLI](https://learn.chatgpt.com/docs/codex/cli)：终端内探索、修改、执行、审查和委派。
+- [Codex IDE Extension](https://learn.chatgpt.com/docs/codex/ide)：利用编辑器当前文件、选区和工作区上下文。
+- [Codex Cloud](https://learn.chatgpt.com/docs/cloud)：在隔离云环境中并行委派任务并审查结果。
+- ChatGPT 桌面端中的 Codex：本地项目、Goal、Worktree、Review 和应用集成。
+- [`codex exec`](https://learn.chatgpt.com/docs/non-interactive-mode)：脚本、CI 和结构化输出。
+- [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) 与 [App Server](https://learn.chatgpt.com/docs/app-server)：把 Codex thread/turn/event/approval 能力嵌入自己的客户端。
+
+### 1.2 官方文档维度全表
+
+| 维度 | 官方说明与关键结论 | 一键原文 |
+| --- | --- | --- |
+| 工作方式 | 从结果出发，让 Agent 探索、实施、验证；任务运行中可 steer 当前轮次或 queue 下一轮 | [Prompting](https://learn.chatgpt.com/docs/prompting) |
+| 长任务 | Goal 应写 Outcome、Constraints、Verification；Goal 不扩大原有权限 | [Long-running work](https://learn.chatgpt.com/docs/long-running-work) |
+| CLI/命令 | 覆盖 plan、goal、review、diff、compact、resume、fork、agent、skills、hooks、MCP 等命令 | [Developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli) |
+| 基础配置 | 用户 `~/.codex/config.toml`、可信项目 `.codex/config.toml`、Profile、系统层和 CLI override 分层解析 | [Config basics](https://learn.chatgpt.com/docs/config-file/config-basic) |
+| 高级配置 | Provider、模型参数、Shell 环境、MCP、Hook、Agent roles、History、OTel、通知和 TUI | [Advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced) |
+| 完整字段 | `config.toml` 与管理员 `requirements.toml` 的可搜索字段表 | [Configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) |
+| 登录/Provider | ChatGPT 登录、API Key、Access Token、Headless 登录、凭据存储和替代 Provider | [Authentication](https://learn.chatgpt.com/docs/auth) |
+| 模型 | 模型、推理强度和本地/云默认值的选择 | [Models](https://learn.chatgpt.com/docs/models) |
+| 项目指令 | `AGENTS.md` 从全局到仓库/子目录分层加载；更具体的目录指令更靠后 | [`AGENTS.md`](https://learn.chatgpt.com/docs/agent-configuration/agents-md) |
+| 命令规则 | `.rules` 控制哪些命令可在沙箱外运行，并提供规则测试机制 | [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules) |
+| Memory | 本地 Memory 与团队规则分离；Memory 是辅助召回，不是必须遵守规则的唯一载体 | [Memories](https://learn.chatgpt.com/docs/customization/memories) |
+| Skill | `SKILL.md` + scripts/references/assets；启动时看元数据，使用时再加载全文 | [Build skills](https://learn.chatgpt.com/docs/build-skills) |
+| Plugin | 可安装和分发的能力包；可捆绑 Skills、MCP、Hooks 等 | [Plugins](https://learn.chatgpt.com/docs/plugins)、[Build plugins](https://learn.chatgpt.com/docs/build-plugins) |
+| MCP | 连接 stdio/HTTP 外部工具、资源和 Prompt，支持 OAuth 与 Plugin 提供的 MCP | [MCP](https://learn.chatgpt.com/docs/extend/mcp) |
+| Hooks | Session、Prompt、Tool、Permission、Compaction、Subagent、Stop 等生命周期事件 | [Hooks](https://learn.chatgpt.com/docs/hooks) |
+| Subagent | 自定义角色、模型、推理强度、工具/MCP、沙箱；强调上下文隔离和独立任务 | [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
+| 并行隔离 | 独立任务可并行；会写代码的并行 chat 应使用独立 Worktree | [Worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees) |
+| 权限/沙箱 | 沙箱规定技术访问边界，审批规定何时询问；二者独立 | [Agent approvals & security](https://learn.chatgpt.com/docs/agent-approvals-security) |
+| 权限 Profile | 可定义文件、网络、Unix socket、私网等更细的 Permission Profile | [Permissions](https://learn.chatgpt.com/docs/permissions) |
+| 网络 | Cloud 默认在 Agent 阶段限制网络，可用域名和 HTTP 方法白名单开放 | [Cloud internet access](https://learn.chatgpt.com/docs/cloud/internet-access) |
+| 环境 | Cloud setup、环境变量/Secret、缓存；Local setup script/actions；Git Worktree | [Cloud environment](https://learn.chatgpt.com/docs/environments/cloud-environment)、[Local environment](https://learn.chatgpt.com/docs/environments/local-environment) |
+| Review | 可选择审查范围、查看 Finding、处理 inline comment、PR 和本地变更 | [Code review](https://learn.chatgpt.com/docs/code-review) |
+| 自动化 | `codex exec`、GitHub Action、Scheduled Tasks/事件触发 | [`codex exec`](https://learn.chatgpt.com/docs/non-interactive-mode)、[GitHub Action](https://learn.chatgpt.com/docs/github-action)、[Scheduled tasks](https://learn.chatgpt.com/docs/automations) |
+| 程序化接口 | SDK 提供 thread start/continue/resume；App Server 暴露 thread、turn、event、approval、skill、auth 等协议 | [SDK](https://learn.chatgpt.com/docs/codex-sdk)、[App Server](https://learn.chatgpt.com/docs/app-server) |
+| 观测/管理 | 可选 OTel、History、管理员约束和 Managed config | [Security/telemetry](https://learn.chatgpt.com/docs/agent-approvals-security#monitoring-and-telemetry)、[Managed configuration](https://learn.chatgpt.com/docs/enterprise/managed-configuration) |
+
+### 1.3 Codex 官方最核心的使用建议
+
+官方 Prompt 指南并不要求固定模板，而是建议根据任务选择四类信息：
+
+1. **Goal**：最终要得到什么。
+2. **Context**：哪些文件、来源、截图或系统会改变答案。
+3. **Output**：结果格式、受众和细节程度。
+4. **Boundaries**：必须保持不变、禁止做或需要先询问的事项。
+
+重点是“描述结果而不是微管理全部步骤”。较大任务再加入验收检查；运行中发现方向不对时 steer，而不是等整个任务结束。
+
+官方对定制层的建议顺序也很明确：先用 `AGENTS.md` 固化仓库惯例，再用 Plugin/Skill 复用流程，用 MCP 接外部系统，最后才用 Subagent 隔离高噪声或专门任务。详见 [Customization](https://learn.chatgpt.com/docs/customization/overview)。
+
+### 1.4 Codex 容易混淆的边界
+
+- `AGENTS.md` 是持久指令；Memory 是从旧会话生成的辅助召回；Skill 是按需流程；MCP 是外部能力；Hook 是确定性生命周期动作。
+- Rules 主要决定命令何时允许越出沙箱，不等同于 `AGENTS.md` 的行为建议。
+- Goal 是持续完成条件，不等同于 Plan；Goal 不会自动扩大沙箱或网络权限。
+- SDK 适合直接控制本地 Agent；需要完整客户端协议、审批和事件流时使用 App Server。
+- 自动化应默认最小权限。非交互运行遇到必须新增审批的动作会失败，而不是偷偷放行。
+
+### 1.5 Codex 推荐阅读顺序
+
+1. [CLI](https://learn.chatgpt.com/docs/codex/cli) → [Prompting](https://learn.chatgpt.com/docs/prompting) → [`AGENTS.md`](https://learn.chatgpt.com/docs/agent-configuration/agents-md)。
+2. [Configuration](https://learn.chatgpt.com/docs/config-file/config-basic) → [Security](https://learn.chatgpt.com/docs/agent-approvals-security)。
+3. [Skills](https://learn.chatgpt.com/docs/build-skills) → [MCP](https://learn.chatgpt.com/docs/extend/mcp) → [Hooks](https://learn.chatgpt.com/docs/hooks) → [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)。
+4. [`codex exec`](https://learn.chatgpt.com/docs/non-interactive-mode) → [SDK](https://learn.chatgpt.com/docs/codex-sdk) → [App Server](https://learn.chatgpt.com/docs/app-server)。
+
+## 2. Anthropic Claude Code
+
+### 2.1 官方产品地图
+
+Claude Code 已覆盖 [CLI、Desktop、VS Code、JetBrains、Web、Mobile、Chrome、Slack 和 CI/CD](https://code.claude.com/docs/en/platforms)。其核心是 Agentic loop：读取上下文、调用工具、观察结果、继续决策。官方还把并行能力拆为四个不同层次：
+
+- [Subagents](https://code.claude.com/docs/en/sub-agents)：单会话内的隔离工作者。
+- [Agent View](https://code.claude.com/docs/en/agent-view)：从一个界面调度和观察多个独立会话。
+- [Agent Teams](https://code.claude.com/docs/en/agent-teams)：Lead + Teammates + 共享任务 + 直接通信。
+- [Dynamic Workflows](https://code.claude.com/docs/en/workflows)：Claude 编写脚本，大规模扇出 Subagent 并交叉验证。
+
+[Run agents in parallel](https://code.claude.com/docs/en/agents) 是这四类能力的官方选型入口。
+
+### 2.2 官方文档维度全表
+
+| 维度 | 官方说明与关键结论 | 一键原文 |
+| --- | --- | --- |
+| 工作原理 | Agentic loop、内置工具、环境、Session、Context、Checkpoint、Permission | [How Claude Code works](https://code.claude.com/docs/en/how-claude-code-works) |
+| Prompt | 指定文件/场景/测试偏好，指向来源和现有模式，描述症状与修复判据 | [Best practices](https://code.claude.com/docs/en/best-practices)、[Prompt library](https://code.claude.com/docs/en/prompt-library) |
+| 推荐流程 | Explore → Plan → Implement → Verify/Commit；小改动可跳过 Plan | [Best practices](https://code.claude.com/docs/en/best-practices#explore-first-then-plan-then-code) |
+| 功能选型 | 比较 `CLAUDE.md`、Rules、Skill、Subagent、Workflow、MCP、Hook、Plugin | [Features overview](https://code.claude.com/docs/en/features-overview) |
+| 配置目录 | `.claude` 下 settings、rules、agents、skills、hooks、workflows、memory 的作用 | [Explore `.claude`](https://code.claude.com/docs/en/claude-directory) |
+| Settings | User/Project/Local/Managed 等 Scope、合并和优先级 | [Settings](https://code.claude.com/docs/en/settings) |
+| Model | 模型、effort、extended thinking/context、auto-compact、fallback 和 Prompt Cache | [Model configuration](https://code.claude.com/docs/en/model-config) |
+| 项目指令 | `CLAUDE.md`、`CLAUDE.local.md`、嵌套文件、import 和路径 Rules | [Memory and `CLAUDE.md`](https://code.claude.com/docs/en/memory) |
+| Auto memory | Claude 自动保存纠正和偏好；可审计编辑；与人工维护的规则分离 | [Auto memory](https://code.claude.com/docs/en/memory#auto-memory) |
+| Context | 显示自动加载内容、文件读取成本、Compaction 前后保留内容 | [Context window](https://code.claude.com/docs/en/context-window) |
+| Prompt Cache | 解释缓存层次、失效行为、TTL、Subagent cache 和命中率 | [Prompt caching](https://code.claude.com/docs/en/prompt-caching) |
+| Session | Resume、Name、Branch、Export、Transcript；Checkpoint 支持 Rewind | [Sessions](https://code.claude.com/docs/en/sessions)、[Checkpointing](https://code.claude.com/docs/en/checkpointing) |
+| 大仓库 | 嵌套指令、路径 Rules、Sparse Worktree、Code intelligence、按包 Skill | [Large codebases](https://code.claude.com/docs/en/large-codebases) |
+| Skills | 按需知识/流程、支持工具预授权、动态上下文、Subagent context 和 Evals | [Skills](https://code.claude.com/docs/en/skills) |
+| Plugins | 捆绑 Skill、Agent、Hook、MCP、LSP、Monitor 和默认设置 | [Plugins](https://code.claude.com/docs/en/plugins) |
+| MCP | Local/Project/User scope、OAuth、Tool search、Resources、Prompts、Elicitation | [MCP](https://code.claude.com/docs/en/mcp) |
+| Hooks | Command/HTTP/MCP/Prompt/Agent Hook；事件覆盖 Session、Tool、Task、Team、Worktree、Compact、Model switch | [Hooks guide](https://code.claude.com/docs/en/hooks-guide)、[Hooks reference](https://code.claude.com/docs/en/hooks) |
+| Goal/验证 | `/goal` 由独立 Evaluator 检查完成条件；Stop Hook 可做确定性门禁 | [Goal](https://code.claude.com/docs/en/goal)、[Best practices](https://code.claude.com/docs/en/best-practices#give-claude-a-way-to-verify-its-work) |
+| Subagent | 独立 Context、工具、模型、权限、Hook、Skill；支持显式/自动委派和 Fork | [Subagents](https://code.claude.com/docs/en/sub-agents) |
+| 多会话 | Agent View、Cross-session messaging、Worktree isolation | [Agent View](https://code.claude.com/docs/en/agent-view)、[Messaging](https://code.claude.com/docs/en/cross-session-messaging)、[Worktrees](https://code.claude.com/docs/en/worktrees) |
+| Agent Teams | Lead、Teammate、共享 Task、直接消息和 Team hooks；当前仍为实验功能 | [Agent Teams](https://code.claude.com/docs/en/agent-teams) |
+| Dynamic Workflow | 适合大量文件审计、迁移、迭代修复和多来源研究 | [Dynamic workflows](https://code.claude.com/docs/en/workflows) |
+| Permission | Tool allow/ask/deny、模式、Managed policy、Workspace trust | [Permissions](https://code.claude.com/docs/en/permissions)、[Permission modes](https://code.claude.com/docs/en/permission-modes) |
+| Sandbox | 文件/网络 OS 隔离、Secret mask、组织强制策略和局限 | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
+| Review | 本地 Diff Review、PR Code Review、多 Agent 分析和定制 `REVIEW.md` | [Code Review](https://code.claude.com/docs/en/code-review) |
+| 自动化 | Headless、GitHub Actions、Cloud Routine、Session 内 Schedule | [Headless](https://code.claude.com/docs/en/headless)、[GitHub Actions](https://code.claude.com/docs/en/github-actions)、[Routines](https://code.claude.com/docs/en/routines)、[Scheduled tasks](https://code.claude.com/docs/en/scheduled-tasks) |
+| SDK | Agent loop、Session、External storage、Structured output、Custom tools、Subagent、Hook、Permission | [Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) |
+| 部署/观测 | Subprocess、容器、Session 持久化、扩缩容、多租户、OTel、Secret/Network | [Hosting](https://code.claude.com/docs/en/agent-sdk/hosting)、[Observability](https://code.claude.com/docs/en/agent-sdk/observability)、[Secure deployment](https://code.claude.com/docs/en/agent-sdk/secure-deployment) |
+
+### 2.3 Claude Code 官方最核心的使用建议
+
+1. **给验证信号。** 测试、build、lint、固定 fixture 或截图对比必须能让 Claude 自己读取 Pass/Fail。
+2. **先探索再计划。** 不熟悉或多文件任务先在 Plan mode 研究；能用一句话描述 Diff 的小任务无需强制规划。
+3. **Prompt 指向具体上下文。** 命名文件、症状、已有实现模式和测试偏好，比抽象地说“优化代码”更可靠。
+4. **证据优于声明。** 让 Claude 给出执行的命令、退出结果或截图，而不是只说完成。
+5. **主动管理 Context。** 高噪声调查交给 Subagent，及时 compact/branch/resume，不让无关日志长期污染主会话。
+
+### 2.4 Claude Code 的功能分工
+
+官方 [Features overview](https://code.claude.com/docs/en/features-overview) 给出了非常清晰的选择规则：
+
+- 每个会话都必须知道：`CLAUDE.md`。
+- 只对某类路径生效：`.claude/rules/`。
+- 偶尔使用的知识或重复流程：Skill。
+- 外部数据/动作：MCP。
+- 高噪声、独立上下文：Subagent。
+- 大量扇出并需要交叉验证：Dynamic Workflow。
+- 每次事件都必须执行：Hook。
+- 跨项目分发整套能力：Plugin。
+
+### 2.5 Agent Teams 的准确边界
+
+截至核验日，Agent Teams 仍默认关闭，需要 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。它适合研究、竞争假设、跨层模块等可独立推进且需要互相交流的任务；不适合严格顺序任务、强依赖任务和多人同时改同一文件。非交互 `-p` 与 Agent SDK 不生成 Teammate。官方明确提醒它的 Token 成本高于 Subagent。
+
+### 2.6 Claude Code 推荐阅读顺序
+
+1. [How it works](https://code.claude.com/docs/en/how-claude-code-works) → [Best practices](https://code.claude.com/docs/en/best-practices)。
+2. [Features overview](https://code.claude.com/docs/en/features-overview) → [Memory](https://code.claude.com/docs/en/memory) → [Context](https://code.claude.com/docs/en/context-window)。
+3. [Permissions](https://code.claude.com/docs/en/permissions) → [Sandbox](https://code.claude.com/docs/en/sandboxing) → [Hooks](https://code.claude.com/docs/en/hooks-guide)。
+4. [Subagents](https://code.claude.com/docs/en/sub-agents) → [Parallel agents](https://code.claude.com/docs/en/agents) → [Agent Teams](https://code.claude.com/docs/en/agent-teams)。
+5. [Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) → [Agent loop](https://code.claude.com/docs/en/agent-sdk/agent-loop) → [Hosting](https://code.claude.com/docs/en/agent-sdk/hosting)。
+
+## 3. LangChain、LangGraph、Deep Agents 与 LangSmith
+
+### 3.1 先分清官方产品层级
+
+| 层 | 定位 | 官方入口 |
+| --- | --- | --- |
+| LangChain | 模型、Message、Tool、Agent loop、Middleware 等高层构件 | [LangChain overview](https://docs.langchain.com/oss/python/langchain/overview) |
+| LangGraph | 长运行、状态化、可恢复的编排运行时 | [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview) |
+| Deep Agents SDK | 在 LangChain/LangGraph 上封装文件、Skill、Memory、Subagent、Sandbox、HITL 的 Harness | [Deep Agents overview](https://docs.langchain.com/oss/python/deepagents/overview) |
+| Deep Agents Code | 基于 Deep Agents SDK 的终端编码 Agent 产品 | [Deep Agents Code](https://docs.langchain.com/oss/deepagents/code/overview) |
+| LangSmith | Trace、Evaluation、Studio 和 Deployment | [Observability](https://docs.langchain.com/oss/python/langchain/observability)、[Deployment](https://docs.langchain.com/oss/python/langgraph/deploy) |
+
+### 3.2 LangChain 官方文档维度
+
+| 维度 | 官方说明与关键结论 | 一键原文 |
+| --- | --- | --- |
+| Agent 定义 | Agent 是模型循环调用工具直到任务结束；Harness 是 Prompt、Tool、Middleware 等外围 | [Agents](https://docs.langchain.com/oss/python/langchain/agents) |
+| 核心构件 | Model、Tool、System prompt、Structured output、State、Runtime | [Agents](https://docs.langchain.com/oss/python/langchain/agents)、[Component architecture](https://docs.langchain.com/oss/python/langchain/component-architecture) |
+| Context engineering | 分 Model context、Tool context、Lifecycle context；控制 System Prompt、Messages、Tools、Model 和 Response format | [Context engineering](https://docs.langchain.com/oss/python/langchain/context-engineering) |
+| Model | Provider、Tool calling、Reasoning、Multimodal、Cache、Rate limit、Dynamic selection | [Models](https://docs.langchain.com/oss/python/langchain/models) |
+| Tools | Schema、Context/State/Store、Error、Dynamic selection、Headless tools | [Tools](https://docs.langchain.com/oss/python/langchain/tools) |
+| Structured output | Provider-native 或 Tool strategy，支持错误处理 | [Structured output](https://docs.langchain.com/oss/python/langchain/structured-output) |
+| Runtime | 在 Tool/Middleware 中访问 Context、Store、Execution info | [Runtime](https://docs.langchain.com/oss/python/langchain/runtime) |
+| Middleware | Retry、Fallback、Summarization、HITL、Call limit、PII、Todo、Tool selector、Filesystem、Subagent、Rubric | [Middleware](https://docs.langchain.com/oss/python/langchain/middleware/overview)、[Prebuilt middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in) |
+| 短期记忆 | Checkpointer 管理 Thread 内状态；长上下文可 trim/delete/summarize | [Short-term memory](https://docs.langchain.com/oss/python/langchain/short-term-memory) |
+| 长期记忆 | Store 以 namespace/key 跨 Thread 保存 JSON 文档 | [Long-term memory](https://docs.langchain.com/oss/python/langchain/long-term-memory) |
+| Guardrail/HITL | PII、自定义前后置 Guardrail；敏感 Tool call 可 approve/edit/reject/respond | [Guardrails](https://docs.langchain.com/oss/python/langchain/guardrails)、[HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) |
+| MCP | Tools、Resources、Prompts、HTTP/stdio、Session、Interceptor、Progress、Elicitation | [MCP](https://docs.langchain.com/oss/python/langchain/mcp) |
+| Multi-agent | Subagents、Handoffs、Skills、Router、自定义 Workflow | [Multi-agent](https://docs.langchain.com/oss/python/langchain/multi-agent) |
+| Streaming | Agent progress、Token、Tool call、Reasoning、Subagent、State 和自定义更新 | [Streaming](https://docs.langchain.com/oss/python/langchain/streaming)、[Event streaming](https://docs.langchain.com/oss/python/langchain/event-streaming) |
+| 测试/Eval | Unit、Integration、Trajectory match、LLM-as-judge、LangSmith Evals | [Testing](https://docs.langchain.com/oss/python/langchain/test)、[Agent Evals](https://docs.langchain.com/oss/python/langchain/test/evals) |
+| Observability | 自动 Trace Agent 各步骤，支持项目和 Metadata | [LangSmith observability](https://docs.langchain.com/oss/python/langchain/observability) |
+
+### 3.3 LangGraph 官方文档维度
+
+LangGraph 不是“另一个 Chat Agent API”，而是把流程建模为 State + Node + Edge，并提供持久执行：
+
+| 维度 | 官方要点 | 一键原文 |
+| --- | --- | --- |
+| 设计方法 | 先画业务步骤，再区分 LLM/Data/Action/User-input 节点，最后设计原始 State | [Thinking in LangGraph](https://docs.langchain.com/oss/python/langgraph/thinking-in-langgraph) |
+| API | Graph API 适合显式状态图；Functional API 适合保留普通控制流 | [Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)、[Functional API](https://docs.langchain.com/oss/python/langgraph/functional-api) |
+| Persistence | Checkpoint 保存 Thread 状态；Store 保存跨 Thread 数据 | [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) |
+| Checkpointer | State history、Replay、Update、Durability mode、Custom saver | [Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) |
+| Interrupt | 暂停并持久化，后续用同一 Thread 恢复；副作用必须幂等 | [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) |
+| Fault tolerance | Retry、Timeout、Drain、Resume-safe failure、Subgraph failure | [Fault tolerance](https://docs.langchain.com/oss/python/langgraph/fault-tolerance) |
+| Time travel | 从 Checkpoint Replay、Fork 或修改 State 后继续 | [Time travel](https://docs.langchain.com/oss/python/langgraph/use-time-travel) |
+| Subgraph | Stateful/Stateless 子图、继承 Checkpointer、流式查看子图 | [Subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs) |
+| Testing | 单独测试 Node/Edge，支持 Partial execution | [Test](https://docs.langchain.com/oss/python/langgraph/test) |
+| Deployment | 通过 LangSmith Deployment 托管 | [Deployment](https://docs.langchain.com/oss/python/langgraph/deploy) |
+
+### 3.4 Deep Agents SDK 官方文档维度
+
+[Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) 把成品 Harness 分成四块：Execution environment、Context management、Delegation、Steering。
+
+| 维度 | 官方要点 | 一键原文 |
+| --- | --- | --- |
+| 定制 | Model、Tool、System prompt、Middleware stack、Subagent、Backend、HITL、Skill、Memory、Profile、Structured output | [Customization](https://docs.langchain.com/oss/python/deepagents/customization) |
+| Backend | State、Filesystem、Local shell、Store、ContextHub、Composite routing、自定义协议 | [Backends](https://docs.langchain.com/oss/python/deepagents/backends) |
+| Sandbox | Thread/Assistant scope，Agent-in-sandbox 与 Sandbox-as-tool 两种模式 | [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes) |
+| Permission | 路径/操作规则按顺序 first-match-wins，可暂停审批，Subagent 可更窄 | [Permissions](https://docs.langchain.com/oss/python/deepagents/permissions) |
+| Context | Input/Runtime/State、Offload、Summarization、Subagent isolation、Long-term memory | [Context engineering](https://docs.langchain.com/oss/python/deepagents/context-engineering) |
+| Skill | 动态/命名空间 Skill、Backend 加载、Subagent 专属 Skill、读写权限和脚本 | [Skills](https://docs.langchain.com/oss/python/deepagents/skills) |
+| Memory | Agent/User/Organization scope、Episodic memory、Background consolidation、并发写入 | [Memory](https://docs.langchain.com/oss/python/deepagents/memory) |
+| Subagent | 默认/自定义/Compiled/Dynamic Subagent，工具/模型/Prompt/Skill 可独立 | [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents) |
+| Async Subagent | Worker pool、ASGI/HTTP transport、单部署/拆分部署/混合拓扑 | [Async subagents](https://docs.langchain.com/oss/python/deepagents/async-subagents) |
+| HITL | Checkpointer + Thread ID；支持 Tool 和 Subagent 内部中断 | [HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) |
+| Fault tolerance | Provider rate limit、Call limit、Retry、Fallback、Error handling | [Fault tolerance](https://docs.langchain.com/oss/python/deepagents/fault-tolerance) |
+| Event stream | 单独流式观察 Subagent 生命周期、Message、Tool call 和嵌套工作 | [Event streaming](https://docs.langchain.com/oss/python/deepagents/event-streaming) |
+| Production | 多租户、Async、Durability、Memory scope、Sandbox、Guardrail、Privacy、Frontend | [Going to production](https://docs.langchain.com/oss/python/deepagents/going-to-production) |
+
+### 3.5 Deep Agents Code：原稿遗漏的重要产品
+
+Deep Agents Code 是 LangChain 官方终端编码 Agent，不应只讨论 SDK：
+
+- [Quickstart](https://docs.langchain.com/oss/deepagents/code/quickstart)：交互、非交互、Piping 和 LangSmith Trace。
+- [Configuration](https://docs.langchain.com/oss/deepagents/code/configuration)：配置优先级、Managed policy、Auto memory、History、诊断和数据目录。
+- [Memory and Skills](https://docs.langchain.com/oss/deepagents/code/memory-and-skills)：`AGENTS.md`、Auto memory、Skill 发现与 Headless 调用。
+- [Subagents](https://docs.langchain.com/oss/deepagents/code/subagents)：用带 YAML frontmatter 的 `AGENTS.md` 定义角色。
+- [Goals and rubrics](https://docs.langchain.com/oss/deepagents/code/goals-and-rubrics)：持续目标与独立评分标准。
+- [Approval modes](https://docs.langchain.com/oss/deepagents/code/approval-modes)：Manual、Auto、YOLO；Auto 使用分类模型并在副作用前重新验证。
+- [Hooks](https://docs.langchain.com/oss/deepagents/code/hooks)、[MCP](https://docs.langchain.com/oss/deepagents/code/mcp-tools)、[Plugins](https://docs.langchain.com/oss/deepagents/code/plugins)、[Python extensions](https://docs.langchain.com/oss/deepagents/code/extensions)。
+- [Remote sandboxes](https://docs.langchain.com/oss/deepagents/code/remote-sandboxes)：LangSmith、AgentCore、Daytona、Modal、Runloop、Vercel、E2B 等执行后端。
+
+### 3.6 LangChain 体系的官方选型逻辑
+
+- 普通 Tool-calling Agent：`create_agent`。
+- 需要明确状态机、持久恢复、Interrupt、Replay：LangGraph。
+- 需要文件系统、Skill、Memory、Subagent、Sandbox 的成品 Harness：Deep Agents SDK。
+- 直接想用终端编码 Agent：Deep Agents Code。
+- 生产 Trace、Eval、Studio、Deployment：LangSmith。
+
+官方 Multi-agent 文档还特别提醒：单 Agent + 动态 Tool/Skill 经常已经足够。只有上下文隔离、组织边界、并行化或工具过载是真问题时，才引入 Multi-agent。
+
+## 4. OpenCode
+
+### 4.1 官方产品地图
+
+OpenCode 是开源编码 Agent，底层采用 Client/Server 结构：TUI 是客户端，Server 提供 OpenAPI；还支持 Web、IDE 终端、ACP、GitHub/GitLab 自动化和 JavaScript/TypeScript SDK。
+
+### 4.2 官方文档维度全表
+
+| 维度 | 官方说明与关键结论 | 一键原文 |
+| --- | --- | --- |
+| 入门 | 安装、Provider、`/init`、问答、修改、Undo、Share、Customize | [Overview](https://opencode.ai/docs/) |
+| CLI/TUI/Web | `run`、`serve`、`attach`、session、MCP、ACP；TUI 与 Web 都连接 Server | [CLI](https://opencode.ai/docs/cli)、[TUI](https://opencode.ai/docs/tui)、[Web](https://opencode.ai/docs/web) |
+| 配置 | Remote → Global → Custom → Project → `.opencode` 分层合并；支持 Managed settings | [Config](https://opencode.ai/docs/config) |
+| Provider/Model | 大量云/本地 Provider、Custom Provider、模型 Variant 和默认模型 | [Providers](https://opencode.ai/docs/providers)、[Models](https://opencode.ai/docs/models) |
+| 项目指令 | `/init` 生成/更新 `AGENTS.md`；支持 Global/Project/Claude-compatible 指令 | [Rules](https://opencode.ai/docs/rules) |
+| Prompt 复用 | Command 模板支持参数、Shell 输出、文件引用、指定 Agent/Model/Subtask | [Commands](https://opencode.ai/docs/commands) |
+| Agent | Primary 与 Subagent；内置 Build、Plan、General、Explore、Scout 及内部 Agent | [Agents](https://opencode.ai/docs/agents) |
+| Agent 配置 | JSON 或 Markdown 定义 description、prompt、model、steps、permission、mode、task permission | [Agent configuration](https://opencode.ai/docs/agents#configure) |
+| Tool | Bash、Edit、Write、Read、Grep、Glob、LSP、Patch、Skill、Todo、Web、Question | [Tools](https://opencode.ai/docs/tools) |
+| Custom Tool | `.opencode/tools` 中用 JS/TS 定义 schema/execute，可转调任意语言脚本 | [Custom tools](https://opencode.ai/docs/custom-tools) |
+| Skill | `.opencode`、`.claude`、`.agents` 路径发现；元数据先加载，正文按需读取 | [Skills](https://opencode.ai/docs/skills) |
+| MCP | Local/Remote/OAuth，支持全局和按 Agent 管理；提醒工具会占 Context | [MCP servers](https://opencode.ai/docs/mcp-servers) |
+| Plugin | 项目/全局 JS/TS 或 npm 包；监听事件、注入 Context/环境、增加 Tool | [Plugins](https://opencode.ai/docs/plugins) |
+| Permission | `allow`/`ask`/`deny`，支持 Pattern、外部目录和 Agent override；`--auto` 不绕过 deny | [Permissions](https://opencode.ai/docs/permissions) |
+| Policy | 针对具名 Resource 的实验性策略层，按规则顺序匹配 | [Policies](https://opencode.ai/docs/policies) |
+| Context/Compaction | Config 提供 compaction；TUI 支持 `/compact`；Plugin 有 compaction hook | [Config](https://opencode.ai/docs/config#compaction)、[TUI](https://opencode.ai/docs/tui#compact)、[Plugins](https://opencode.ai/docs/plugins#compaction-hooks) |
+| 外部上下文 | Reference 可挂载项目外目录或 Git 仓库，并说明用途 | [References](https://opencode.ai/docs/references) |
+| 代码质量 | LSP 诊断和代码导航，Formatter 在写入后格式化 | [LSP](https://opencode.ai/docs/lsp)、[Formatters](https://opencode.ai/docs/formatters) |
+| Session/Share | Session 可 export/import；Share 创建公开链接，官方强调隐私和保留策略 | [CLI sessions](https://opencode.ai/docs/cli#session)、[Share](https://opencode.ai/docs/share) |
+| GitHub/GitLab | Issue/PR 评论触发、定时任务和 CI/CD | [GitHub](https://opencode.ai/docs/github)、[GitLab](https://opencode.ai/docs/gitlab) |
+| ACP | 对接 Zed、JetBrains、Avante、CodeCompanion | [ACP](https://opencode.ai/docs/acp) |
+| SDK/Server | SDK 管理 Project、Session、File、TUI、Auth、Event；Server 暴露 OpenAPI/SSE | [SDK](https://opencode.ai/docs/sdk)、[Server](https://opencode.ai/docs/server) |
+| 网络/企业 | Proxy、证书、Central config、SSO、内部 Gateway、自托管 | [Network](https://opencode.ai/docs/network)、[Enterprise](https://opencode.ai/docs/enterprise) |
+| 排错 | Log、Storage、Plugin/cache、Server connection、Provider/Auth 常见故障 | [Troubleshooting](https://opencode.ai/docs/troubleshooting) |
+
+### 4.3 OpenCode 官方文档透露的设计重点
+
+- **配置统一。** `opencode.json/jsonc` 是模型、Agent、Permission、MCP、Plugin、Compaction 等能力的汇合点；各层是 merge 而不是整份替换。
+- **Primary 与 Subagent 分开。** 用户直接切换 Primary；主 Agent 自动委派或用户 `@` 调用 Subagent。
+- **Plan 是受限角色。** 用于分析代码和评审建议；Build 用于真正修改。
+- **Context 成本显式暴露。** MCP 文档提醒过多 Tool schema 会快速占满 Context；应按 Agent 启用。
+- **Client/Server 解耦。** 同一个 Agent Runtime 可被 TUI、Web、SDK、IDE/ACP 使用。
+
+### 4.4 OpenCode 当前官方文档的明确空白
+
+为避免把别家的做法强加给 OpenCode，需要说明：当前官方顶层文档没有独立的“Prompt best practices”、自动长期 Memory、Agent Team/共享任务板、Goal evaluator 或 Agent Eval 指南。它提供的是 Command 模板、`AGENTS.md`、Session、Compaction、Primary/Subagent 和 SDK/Event。横向比较时应标为“官方未提供专门机制/指南”，不能自行补齐概念。
+
+### 4.5 OpenCode 推荐阅读顺序
+
+1. [Overview](https://opencode.ai/docs/) → [Config](https://opencode.ai/docs/config) → [Providers](https://opencode.ai/docs/providers)。
+2. [Rules](https://opencode.ai/docs/rules) → [Agents](https://opencode.ai/docs/agents) → [Permissions](https://opencode.ai/docs/permissions)。
+3. [Tools](https://opencode.ai/docs/tools) → [Skills](https://opencode.ai/docs/skills) → [MCP](https://opencode.ai/docs/mcp-servers) → [Plugins](https://opencode.ai/docs/plugins)。
+4. [Server](https://opencode.ai/docs/server) → [SDK](https://opencode.ai/docs/sdk) → [ACP](https://opencode.ai/docs/acp)。
+
+## 5. DeepSeek Harness
+
+### 5.1 先确认成熟度与风险
+
+[DeepSeek 官方 README](https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md) 把 `dsh` 定义为开源 Agent Harness，强调 “Everything is a Plugin”。截至核验日仍是开发者预览，未来会有破坏兼容性变更。
+
+[官方安全说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.zh.md) 明确指出：项目尚未经过安全审计，能够执行模型生成的代码/命令、加载第三方插件并访问开放给它的文件、网络、进程和凭据；沙箱、审批、权限不能保证隔离。实验应优先使用一次性 VM、容器或专用环境，备份可访问文件并坚持最小权限。
+
+### 5.2 官方产品与架构地图
+
+- [Web UI](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/index.zh.md)：配置模型、选择 Workspace、运行任务。
+- `web`、`headless`、`sdk`、`sdk-minimal`、`acp` Profile：不同入口复用同一插件树，见 [Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md)。
+- [Python SDK](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/python-sdk.zh.md)：通过 NDJSON-RPC/stdio 驱动打包 Runtime。
+- [Cordis](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.zh.md)：Plugin、Context、Dependency injection、Typed events、Reversible effects。
+
+### 5.3 官方文档维度全表
+
+| 维度 | 官方说明与关键结论 | 一键原文 |
+| --- | --- | --- |
+| 运行 | `npx @deepseek-ai/dsh web` 或源码构建 | [README](https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md) |
+| Model/Provider | DeepSeek、目录 Provider、自定义 OpenAI-compatible endpoint、模态和请求兼容性 | [Providers](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.zh.md) |
+| 配置组合 | Profile + Bundle + Profile patch + Home patch + `--patch` overlay | [Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md#profile-与组合包) |
+| Plugin 生命周期 | Fiber 状态、依赖驱动加载、自动清理、嵌套 Context、Dispose、HMR | [Plugin lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/framework/index.zh.md) |
+| Service/Event | Definition/Provider/Consumer；emit/bail/serial/waterfall typed events | [Services](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/framework/service.zh.md)、[Events](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/framework/events.zh.md) |
+| System Prompt | 有序 PromptSection、动态 PromptContext、Tool schema、变量和 scoped shadow | [System prompt](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/system-prompt.zh.md) |
+| Agent loop | Turn/Step/Request/Tool 的持久事件和实时 waterfall 扩展点 | [Architecture: turn flow](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md#轮次流程) |
+| Tool | 统一 JSON Schema、参数/输出校验、Scope restriction、Pre/Execute/Post/Result pipeline | [Tools](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/tools.zh.md) |
+| Shell/Sandbox | Shell 是可替换 Service；Sandbox 对每次进程调用包装 argv 并 fail closed | [Shell](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/shell.zh.md)、[Sandbox](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/sandbox.zh.md) |
+| Approval | `ask/never` 策略；结果为 allowed-once/rejected/cancelled/unavailable，失败时拒绝 | [Approval](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/approval.zh.md) |
+| Permission preset | 将独立的 Sandbox mode 与 Approval policy 组合为 UI 可选预设 | [Permission presets](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/permission-presets.zh.md) |
+| Session | Append-only `SessionEvent` 日志是真源；模型历史、UI、Fork、Telemetry 从日志投影 | [Session](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/session.zh.md) |
+| Persistence | 可替换后端、Flush checkpoint、崩溃恢复、Session header、JSONL provider | [Persistence](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/persistence.zh.md) |
+| Context compression | Compaction 对历史压缩，Tool result pruner；Spill 把大结果移出主上下文 | [Compaction](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/compaction.zh.md)、[Spill](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/spill.zh.md) |
+| Memory | 当前官方提供第三方 Memory MCP 参考配置，不把它等同于 Session persistence | [Memory MCP](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/mcp-memory.zh.md) |
+| Skill | Registry、Provider、本地发现优先级、摘要/候选/全文分层、Session catalog | [Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.zh.md) |
+| Plan/Goal/Todo | Plan mode 可恢复；Goal 记录生命周期并续跑；Todo 是持久列表事件 | [Plan](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/plan.zh.md)、[Goal](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/goal.zh.md)、[Todo](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/todo.zh.md) |
+| Subagent | 可插拔 Provider；支持一次性与可继续子 Agent、能力协商、工具过滤、Persona、Depth | [Subagent](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.zh.md) |
+| Agent Teams | 持久 Roster、Mailbox、共享 Task DAG 和 Replay；目前为实验性私有显式启用 seam | [Agent Teams](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/agent-team.zh.md) |
+| Workflow/Job/Schedule | Workflow run、后台 Job registry、Session 内持久 Schedule | [Workflow](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/workflow.zh.md)、[Jobs](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/jobs.zh.md)、[Schedule](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/schedule.zh.md) |
+| LLM Adapter | StreamChunk 协议、GenerateOptions、Adapter registry、Error handling | [LLM adapter](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/practice/llm-adapter.zh.md)、[LLM streaming](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/llm-streaming.zh.md) |
+| Telemetry/Credentials | 遥测后端可替换并有脱敏 waterfall；凭据解析和描述分离 | [Telemetry](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/session-telemetry.zh.md)、[Credentials](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/credentials.zh.md) |
+| 插件开发 | 第一个 Plugin、Config schema、Tool、打包安装、三角色能力设计 | [Developer guide](https://github.com/deepseek-ai/deepseek-harness/tree/master/docs/user/develop) |
+
+### 5.4 DeepSeek Harness 最值得学习的架构原则
+
+1. **没有特权内核。** Model adapter、Tool registry、Session log、Agent loop 都是插件。
+2. **能力按三角色设计。** Service Definition 固定契约，Provider 可替换，Consumer 决定怎样暴露给模型。
+3. **注册必须可逆。** `ctx.effect()`/`ctx.on()` 注册的 Prompt、Tool、Listener、Provider 都要有 Dispose，保证 HMR/Teardown。
+4. **模型可见即已记录。** 能进入模型的内容必须能从 Session 日志重建。
+5. **能力协商要显式失败。** Subagent Provider 不支持某选项时拒绝启动，不能静默降级。
+6. **沙箱和审批分离。** Permission preset 只是两个独立执行 knob 的组合，不能代替真实强制执行。
+
+### 5.5 DeepSeek Harness 当前官方文档的明确空白
+
+官方当前更重视 Runtime/Plugin 架构，没有单独的终端 Prompt 最佳实践、内置长期 Memory 产品指南、Agent Eval 教程或成熟生产部署安全承诺。System Prompt 页讲的是“怎样组合 Prompt section/context/tool schema”，不是“用户应该怎样写任务 Prompt”。这些空白必须如实标注。
+
+### 5.6 DeepSeek Harness 推荐阅读顺序
+
+1. [README](https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md) → [Safety](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.zh.md) → [Web UI](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/index.zh.md)。
+2. [Cordis primer](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.zh.md) → [Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md)。
+3. [First plugin](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/index.zh.md) → [Tool](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/tool.zh.md) → [Capability roles](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/practice/index.zh.md)。
+4. [Session](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/session.zh.md) → [Tools](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/tools.zh.md) → [Subagent](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.zh.md) → [Sandbox/Approval](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/permission-presets.zh.md)。
+
+# 第二部分：按 Agent 能力横向比较
+
+## 6. Prompt：官方分别建议怎样写任务
+
+### Codex
+
+[官方 Prompting](https://learn.chatgpt.com/docs/prompting) 推荐按需提供 Goal、Context、Output、Boundaries。先说需要的结果，只有过程本身重要时才规定步骤；添加真正会影响结果的来源；边界只保留能避免真实损失的 1～2 项；重要任务要求最终检查。
+
+适合 Codex 的任务结构：
 
 ```text
-Agent = Model + Agent Loop
-
-Harness = Instructions + Context + Tools + State/Memory
-        + Permissions + Verification + Lifecycle + Observability
+目标结果：修复登录超时后的刷新失败。
+上下文：重点看 src/auth/，以现有 session 测试为模式。
+边界：不要改变 token 格式，不要修改登录接口。
+验收：先写失败测试，修复后运行 auth 测试和 typecheck，报告命令结果。
 ```
 
-模型决定推理能力，Harness 决定它在真实工程里能否稳定完成任务。一个强模型配上混乱上下文、过宽权限和没有测试的 Harness，仍然会不可靠。
+### Claude Code
 
-## 1. Codex：从正确使用到二次开发
+[Best practices](https://code.claude.com/docs/en/best-practices#provide-specific-context-in-your-prompts) 更强调具体性：指定文件、场景、测试偏好；指向 Git history 或现有实现模式；描述症状和“修好是什么样”。同时要求可执行验证，并在复杂任务采用 Explore → Plan → Implement。
 
-### 官方一键入口
+Claude 的官方例子体现“委派目标，不微管理实现”：告诉它找根因、复现、遵守已有模式和运行测试，而不是预写每一行代码。
 
-- [Codex CLI](https://learn.chatgpt.com/docs/codex/cli)：安装、交互、恢复会话、图片输入和常用能力总览。
-- [用 `AGENTS.md` 提供项目指令](https://learn.chatgpt.com/docs/agent-configuration/agents-md)：全局、仓库、子目录指令的发现和覆盖规则。
-- [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)：内置角色、自定义角色、并发与权限。
-- [Agent Skills](https://learn.chatgpt.com/docs/build-skills)：按需加载的可复用流程、脚本和参考资料。
-- [MCP](https://learn.chatgpt.com/docs/extend/mcp)：连接外部工具、数据和服务。
-- [Hooks](https://learn.chatgpt.com/docs/hooks)：在会话、工具调用、审批、压缩和子智能体事件上运行确定性逻辑。
-- [安全、沙箱与审批](https://learn.chatgpt.com/docs/agent-approvals-security)：区分“技术上能做什么”和“何时需要询问”。
-- [非交互模式 `codex exec`](https://learn.chatgpt.com/docs/non-interactive-mode)：用于脚本和 CI，支持 JSONL 和结构化输出。
-- [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) 与 [App Server](https://learn.chatgpt.com/docs/app-server)：把同一个 Codex Agent 嵌入自己的程序或客户端。
-- [OpenAI 官方 Codex 仓库](https://github.com/openai/codex)：源码、Issue 和发布信息。
+### LangChain
 
-### 推荐使用路径
+LangChain 面向的是开发者构建 Agent。[Context engineering](https://docs.langchain.com/oss/python/langchain/context-engineering) 把 Prompt 视为 Model Context 的一个组成：System Prompt、Messages、Tools、Model、Response format 共同决定行为。官方建议动态内容通过 Runtime/Middleware 生成，不要把所有状态硬编码进一个静态 Prompt；LangGraph 还建议 State 保存原始数据，真正调用模型时再格式化 Prompt。
 
-1. 在仓库根目录运行 Codex，先让它只读探索项目，要求输出证据和计划。
-2. 把反复说明的构建命令、目录边界、编码规范、验证门槛写入仓库的 `AGENTS.md`。
-3. 把只对某个子目录生效的规则放到该目录的 `AGENTS.md` 或 `AGENTS.override.md`，不要让根指令无限膨胀。
-4. 把“有固定步骤、参考资料或脚本”的工作提炼成 Skill；把外部系统能力接成 MCP。
-5. 对独立、读多写少、会产生大量上下文的任务使用 Subagent；多个 Agent 同时改同一个文件时要谨慎。
-6. 用测试、lint、build、截图比较或独立评审 Agent 构成验证闭环，再考虑无人值守的 `codex exec`。
+### OpenCode
 
-### 最值得理解的机制
+当前官网没有独立 Prompt 最佳实践页。官方支持两层：一次性任务直接输入 TUI/`opencode run`；可复用 Prompt 用 [Commands](https://opencode.ai/docs/commands) 模板化，并插入参数、Shell 输出和文件引用。长期约束放 [`AGENTS.md`](https://opencode.ai/docs/rules)，不能把第三方 Prompt 方法冒充为 OpenCode 官方建议。
 
-**项目指令是分层上下文，不是强制安全边界。** Codex 从全局配置开始，再从仓库根目录沿当前工作目录向下加载项目指令；更接近当前目录的内容后出现并可覆盖前面的内容。规则应短、具体、可验证。真正需要阻止的行为应交给沙箱、审批、权限和 Hooks。
+### DeepSeek Harness
 
-**Skill 用渐进式披露节约上下文。** 启动时只暴露技能名称与描述，匹配任务后才加载完整 `SKILL.md`；脚本、模板和长参考资料也只在需要时读取。不要把所有领域知识塞进 `AGENTS.md`。
+当前官网没有面向最终用户的 Prompt 写作指南。[System prompt subsystem](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/system-prompt.zh.md) 解决的是 Runtime 组装：插件贡献有序 Section、动态 Context、变量和 Tool schema，Scope 可覆盖全局定义。对自建 Harness 的启发是把 Persona、Policy、Runtime facts、Tools 分段注册，而不是拼接一个不可维护的大字符串。
 
-**Subagent 的首要价值是上下文隔离。** 搜索结果、日志和长文件留在子上下文，只把结论交回主 Agent。适合并行研究、代码库探索和独立评审，不适合强顺序依赖或高冲突写入。
+### 横向结论
 
-**沙箱和审批是两个维度。** 沙箱规定进程能够访问的文件、网络和系统能力；审批策略规定何时暂停请求人类许可。自动模式并不等于无限权限，完全访问模式也不应在不可信仓库或宿主机上使用。
+- 使用产品时：Codex 的 Goal/Context/Output/Boundary 最通用，Claude 的“具体上下文 + 验证 + 分阶段”最工程化。
+- 设计 Runtime 时：LangChain 强调 Context engineering，DeepSeek 强调 Prompt registry/section/scope。
+- OpenCode 当前只提供 Command/Rule 机制，没有官方 Prompt 方法论，应避免过度推断。
 
-### 从 Codex 学习设计自己的 Agent
+## 7. 持久项目指令：每次会话都应知道什么
 
-- 用层级指令解决 monorepo 的局部上下文问题。
-- 用 Skills 把“发现能力”和“加载完整能力”分开。
-- 把读写权限、联网能力和人工审批设计成可组合而非单一开关。
-- 为自动化提供事件流、结构化输出、恢复 thread 和明确的失败语义。
-- Hooks 是确定性护栏，但不能代替操作系统级隔离。
+- **Codex**：[`AGENTS.md`](https://learn.chatgpt.com/docs/agent-configuration/agents-md)；全局和仓库/子目录层叠，目录越近越具体。只放稳定命令、约束和验证要求。
+- **Claude Code**：[`CLAUDE.md`](https://code.claude.com/docs/en/memory) + `.claude/rules/`；官方建议简洁，当前给出的经验目标是单文件 200 行以内，路径规则可按需加载。
+- **LangChain**：`system_prompt` 是 Agent 构造参数；动态用户/租户信息应通过 [Runtime/Middleware](https://docs.langchain.com/oss/python/langchain/runtime) 注入。Deep Agents 的 Always-on Memory 可加载 `AGENTS.md`。
+- **OpenCode**：[`AGENTS.md`](https://opencode.ai/docs/rules)；`/init` 会扫描仓库生成或改善内容，还支持 `opencode.json` 的 instructions 和 Claude-compatible 文件。
+- **DeepSeek Harness**：[Prompt section/context registry](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/system-prompt.zh.md)；这是插件级组装，不是约定一个仓库根 Prompt 文件。
 
-## 2. Claude Code：重点理解上下文、验证和团队协作
+共同原则：每次都需要的最小事实才进入 Always-on 指令；长流程放 Skill；强制安全规则放 Permission/Sandbox/Hook。
 
-### 官方一键入口
+## 8. Context、Compaction、Memory 与 Session
 
-- [Claude Code 概览](https://code.claude.com/docs/en/overview) 与 [最佳实践](https://code.claude.com/docs/en/best-practices)。
-- [Claude Code 的工作原理](https://code.claude.com/docs/en/how-claude-code-works)：Agent loop、工具和上下文的基础模型。
-- [`CLAUDE.md` 与 Auto memory](https://code.claude.com/docs/en/memory)：持久指令、路径规则和自动记忆。
-- [Subagents](https://code.claude.com/docs/en/sub-agents)：为专门任务定义独立上下文、模型、工具和权限。
-- [Agent Teams](https://code.claude.com/docs/en/agent-teams)：Lead、Teammate、共享任务和直接通信。
-- [Skills](https://code.claude.com/docs/en/skills)、[MCP](https://code.claude.com/docs/en/mcp)、[Hooks 指南](https://code.claude.com/docs/en/hooks-guide) 和 [Plugins](https://code.claude.com/docs/en/plugins)。
-- [权限](https://code.claude.com/docs/en/permissions) 与 [沙箱](https://code.claude.com/docs/en/sandboxing)。
-- [非交互模式](https://code.claude.com/docs/en/headless) 与 [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)。
+| 系统 | 短期上下文 | 跨会话状态 | 官方重点 |
+| --- | --- | --- | --- |
+| Codex | Thread、History、`/compact`、Goal | 可选本地 Memory；团队规则仍放 `AGENTS.md` | [Memory](https://learn.chatgpt.com/docs/customization/memories) 默认关闭，生成会避开短/活跃会话并尝试脱敏 |
+| Claude Code | Context window、Auto compact、Session resume/fork | Auto memory + `CLAUDE.md`；SDK 可接 External SessionStore | [Context](https://code.claude.com/docs/en/context-window)、[Session storage](https://code.claude.com/docs/en/agent-sdk/session-storage) |
+| LangChain | Checkpointer 保存 Thread state | Store 保存 namespace/key 长期数据 | [Short-term](https://docs.langchain.com/oss/python/langchain/short-term-memory) 与 [Long-term](https://docs.langchain.com/oss/python/langchain/long-term-memory) 明确分层 |
+| OpenCode | Session、Compaction、Export/Import | 当前官方无独立自动长期 Memory 指南 | [Config compaction](https://opencode.ai/docs/config#compaction)、[Session CLI](https://opencode.ai/docs/cli#session) |
+| DeepSeek Harness | Append-only Session log、Compaction、Spill | Session persistence；长期语义 Memory 通过外部 MCP 示例 | [Persistence](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/persistence.zh.md)、[Memory MCP](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/mcp-memory.zh.md) |
 
-### 官方最佳实践的核心
+不要把四个概念混为一谈：Context 是本轮模型可见内容；Compaction 是压缩；Session persistence 是恢复运行；Long-term memory 是跨 Thread 的语义召回。
 
-Claude Code 官方把**上下文窗口**视为最重要的资源：对话、读取的文件和命令输出都会占用上下文，越接近上限越容易遗漏早期信息。有效做法是：
+## 9. Tool 与 MCP
 
-- 给 Agent 一个能自己执行的验证条件，例如测试、构建、lint、固定样例或截图对比。
-- 按“探索 → 计划 → 实现 → 验证/提交”拆阶段，先在 Plan mode 中理解问题。
-- Prompt 说明目标、相关路径、约束和验收标准，但不要替 Agent 预写所有实现步骤。
-- 及时纠偏；需要保留探索结果时交给 Subagent，主上下文只保留决策。
-- 要求展示验证证据，而不是只说“已完成”。
+### 共同点
 
-### `CLAUDE.md`、Rules、Memory、Skill 怎么分工
+五家都把 Tool schema 视为 Agent 能力接口，也都支持或连接 MCP。MCP 不只带来功能，还扩大信任边界和 Context 成本。
 
-| 机制 | 放什么 | 不应放什么 |
-| --- | --- | --- |
-| `CLAUDE.md` | 每次会话都应知道的构建命令、架构约束、团队规范 | 很长的教程、偶尔才用的流程、强制安全策略 |
-| `.claude/rules/` | 仅对指定目录或文件类型生效的规则 | 全仓库通用规则的重复副本 |
-| Auto memory | Claude 从纠正和偏好中积累的跨会话经验 | 必须由团队审查和强制执行的政策 |
-| Skill | 按需加载的专业流程、参考资料、脚本和模板 | 每次会话都必须加载的最小事实 |
-| Hook/Permission | 必须确定性阻止、审批或审计的动作 | 只靠自然语言就能清楚表达的偏好 |
+### 差异
 
-官方建议让单个 `CLAUDE.md` 尽量简洁（文档给出的目标是 200 行以内），并定期清理冲突和过时规则。它是上下文，不是强制执行机制。
+- **Codex**：[MCP](https://learn.chatgpt.com/docs/extend/mcp) 同时提供 Tool、Resource、Prompt；可用 Skill 描述如何组合 MCP 工具。
+- **Claude Code**：[MCP](https://code.claude.com/docs/en/mcp) 覆盖本地/远端传输、OAuth、Resource、Prompt、Elicitation、Tool search、动态更新、Managed policy；工具规模大时用 Tool search 延迟加载。
+- **LangChain**：[Tools](https://docs.langchain.com/oss/python/langchain/tools) 可访问 State/Context/Store/Stream；[MCP](https://docs.langchain.com/oss/python/langchain/mcp) 支持 Interceptor、Progress、Logging 和 Elicitation。
+- **OpenCode**：[Tool](https://opencode.ai/docs/tools) 内置 Read/Edit/Bash/LSP/Web/Skill/Todo；[Custom tool](https://opencode.ai/docs/custom-tools) 用 JS/TS 包装任意语言；MCP 文档直接提醒过多 Tool 描述会挤占 Context。
+- **DeepSeek Harness**：[Tool Runtime](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/tools.zh.md) 提供 Pre/Execute/Post/Result waterfall、参数和输出双向校验、Scope 过滤；能力通过 Service Provider 可替换。
 
-### Subagent 与 Agent Teams 不要混用概念
+设计建议：Tool schema 要窄、描述要能区分、错误要结构化；读写和并发安全按单次调用判断；对大量工具采用按 Agent/Skill/Tool-search 渐进暴露。
 
-| 维度 | Subagent | Agent Teams |
-| --- | --- | --- |
-| 运行关系 | 在一次主会话内由主 Agent 委派 | 多个独立 Claude Code 会话组成团队 |
-| 通信 | 主要把最终结果交回调用者 | Teammate 可彼此直接通信，并使用共享任务列表 |
-| 成本 | 较低，重工作被压缩后回传 | 较高，每个 Teammate 都是独立实例 |
-| 适用 | 聚焦探索、搜索、分析、独立检查 | 需要讨论、挑战假设、跨层并行协作的复杂任务 |
-| 避免 | 需要持续互相协商的任务 | 顺序任务、多人改同一文件、依赖很密的任务 |
+## 10. Skill、Plugin 与 Hook
 
-截至核验日，[Agent Teams](https://code.claude.com/docs/en/agent-teams) 仍标为实验功能，默认关闭，需要设置 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`；它只在交互式会话中生成 Teammate，非交互 `-p`/Agent SDK 运行不会生成团队成员。官方也明确提醒它会显著增加 token 成本。
+| 系统 | Skill | Plugin | Hook/等价扩展 |
+| --- | --- | --- | --- |
+| Codex | `SKILL.md` 渐进加载 | 分发 Skill/MCP/Hook 的安装单元 | 生命周期 Command/MCP Hook；项目 Hook 受 Trust 控制 |
+| Claude Code | 知识或动作 Skill，可做 Eval、动态 Context、Subagent context | 打包 Skill/Agent/Hook/MCP/LSP/Monitor | Command/HTTP/MCP/Prompt/Agent Hook，事件最丰富 |
+| LangChain | Deep Agents Skill 支持 Backend、Namespace、Permission、Script | Deep Agents Code Plugin | Middleware 是 Loop 内扩展；Deep Agents Code 另有命令 Hook |
+| OpenCode | 兼容 `.opencode/.claude/.agents` Skill | JS/TS/npm Plugin | Plugin Event 即运行时 Hook，可注入 Context、保护 `.env`、监听 Compaction |
+| DeepSeek Harness | Registry/Provider/Catalog 分层 | 所有能力本身就是 Cordis Plugin | Typed Event + reversible effect 是核心扩展机制 |
 
-实用的团队任务应满足三个条件：可以独立推进、边界清晰、合并点清晰。例如三人分别做架构调查、风险审查和验证方案；不宜让三人同时改同一个核心文件。
+原文：[Codex Skills](https://learn.chatgpt.com/docs/build-skills)、[Claude Features](https://code.claude.com/docs/en/features-overview)、[Deep Agents Skills](https://docs.langchain.com/oss/python/deepagents/skills)、[OpenCode Plugins](https://opencode.ai/docs/plugins)、[Cordis primer](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.zh.md)。
 
-### 从 Claude Code 学习设计自己的 Agent
+判断方法：
 
-- 让 Agent 拥有可运行的完成判据，而不是依赖主观“看起来完成”。
-- 主上下文是稀缺资源；用子上下文隔离探索，用摘要保留决策。
-- 团队协作需要身份、任务状态、消息通道、所有权和退出协议，不能只做并行调用。
-- 将指令、记忆、权限和 Hook 分层；“建议做什么”和“绝不能做什么”不是同一种机制。
+- 需要模型理解和灵活执行：Skill。
+- 需要每次事件确定性触发：Hook/Event/Middleware。
+- 需要跨仓库安装和版本管理：Plugin。
+- 需要外部系统数据或动作：MCP。
 
-## 3. LangChain、LangGraph 与 Deep Agents：构建自己的 Agent
+## 11. Plan、Goal、Task 与 Verification
 
-### 先分清三层
+- **Codex**：`/plan` 用于先研究方案；`/goal` 把第一条 Prompt 同时作为完成条件；官方要求 Outcome、Constraint、Verification，支持独立 Review 和 Worktree 并行。原文：[Long-running work](https://learn.chatgpt.com/docs/long-running-work)。
+- **Claude Code**：Plan mode 只读研究；`/goal` 由独立 Evaluator 每轮检查；Stop Hook 可阻止结束；验证 Subagent/Workflow 可提供第二意见。原文：[Best practices](https://code.claude.com/docs/en/best-practices)、[Goal](https://code.claude.com/docs/en/goal)。
+- **LangChain**：Todo/Rubric Middleware、LangGraph State/Interrupt、Deep Agents Code Goal 与独立 Rubric；AgentEvals 支持轨迹匹配和 LLM judge。原文：[Middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in)、[Goals and rubrics](https://docs.langchain.com/oss/deepagents/code/goals-and-rubrics)、[Agent Evals](https://docs.langchain.com/oss/python/langchain/test/evals)。
+- **OpenCode**：Plan Primary Agent、Todo tool、LSP/Formatter、Undo/Redo；当前官网无持续 Goal evaluator 或专门 Agent Eval。原文：[Agents](https://opencode.ai/docs/agents)、[Tools](https://opencode.ai/docs/tools)。
+- **DeepSeek Harness**：Plan/Goal/Todo 都是独立持久子系统；Goal 管生命周期和续跑，Todo 维护事件不变量。原文：[Plan](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/plan.zh.md)、[Goal](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/goal.zh.md)。
 
-- [LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)：高层 Agent 框架，提供模型、工具、system prompt、structured output、state 和 middleware。
-- [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview)：低层、有状态的编排运行时，重点是 durable execution、streaming、persistence 和 human-in-the-loop。
-- [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview)：基于 LangChain/LangGraph 的成品 Harness，内置文件系统、上下文管理、规划、Subagents 和人工介入。
-- [LangSmith Observability](https://docs.langchain.com/langsmith/observability)：追踪运行、调试工具调用和观察 Agent 行为。
+最可靠的完成门槛仍是 Agent 可运行的测试、build、lint、schema、视觉 diff 和独立审查证据。Todo 只证明“记录过任务”，不证明“结果正确”。
 
-选择原则：只需常见 tool-calling loop，使用 `create_agent`；需要精确状态机、持久恢复和确定性/智能步骤混编，使用 LangGraph；希望直接获得较完整的 coding/research Harness，优先评估 Deep Agents。
+## 12. Subagent 与 Multi-agent
 
-### 最小 Agent 和真正可用的 Harness
+### 官方模型对比
 
-LangChain 的 `create_agent(model, tools, ...)` 会运行“模型选择工具 → 执行工具 → 把结果交回模型”的循环，直到模型不再调用工具。生产系统还需要补上：
+| 系统 | 拓扑与状态 | 官方推荐场景 | 限制/风险 |
+| --- | --- | --- | --- |
+| Codex | 主 Agent 管理 Subagent thread，结果回主上下文；可定制角色 | 独立研究、探索、评审、专门工具/模型 | 并发写冲突；Subagent 增加 Token；需控制工具和权限 |
+| Claude Subagent | 单 Session 委派，独立 Context，可后台运行或 Fork | 高噪声搜索、专门角色、Fresh review | 描述本身也占 Context；Fork 继承更多上下文成本 |
+| Claude Agent View | 多独立 Session，由 Supervisor 管理和 Worktree 隔离 | 同时管理许多任务 | 不是 Teammate 协作网络 |
+| Claude Agent Teams | Lead + Teammate + Task list + Direct message | 竞争假设、研究评审、跨层模块 | 实验性、成本高、协调/文件冲突 |
+| Claude Workflow | Script 扇出大量 Subagent 并汇总/交叉验证 | 全仓审计、大迁移、大规模研究 | 需要控制规模、成本和重试 |
+| LangChain | Subagent-as-tool、Handoff、Skill、Router、自定义 Graph | 业务路由、角色切换、并发 Workflow | 首先要解决 Context routing 和 State ownership |
+| Deep Agents | 默认/自定义/动态/异步 Subagent，支持独立 Backend/Skill/Permission | 长任务隔离和部署级 Worker pool | 同步子 Agent 通常单次结果；异步需任务状态/传输 |
+| OpenCode | Primary + Subagent，支持自动委派和 `@` 显式调用 | Explore、General、Scout、自定义专门角色 | 当前无官方 Team/共享任务板 |
+| DeepSeek Harness | 多 Provider、一次性/可继续 Subagent；实验 Team 有持久 Mailbox/DAG | 研究可插拔 Provider、跨 Runtime 委派 | 预览期；Provider 能力不一致需显式协商 |
 
-- structured output，避免下游解析自然语言；
-- checkpointer 保存单个 thread 的短期状态；
-- store 保存跨 thread 的长期记忆；
-- middleware 做日志、重试、模型回退、限流、PII 检查、摘要和人工审批；
-- LangSmith trace/evaluation 观察成功率、错误路径、成本和延迟。
+原文入口：[Codex Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)、[Claude parallel agents](https://code.claude.com/docs/en/agents)、[LangChain Multi-agent](https://docs.langchain.com/oss/python/langchain/multi-agent)、[OpenCode Agents](https://opencode.ai/docs/agents)、[DSH Subagent](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.zh.md)。
 
-官方资料：[`create_agent` 与 Harness 配置](https://docs.langchain.com/oss/python/langchain/agents)、[Middleware](https://docs.langchain.com/oss/python/langchain/middleware)、[短期记忆](https://docs.langchain.com/oss/python/langchain/short-term-memory)、[长期记忆](https://docs.langchain.com/oss/python/langchain/long-term-memory)、[Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)。
+### 选择顺序
 
-### Multi-agent 不是默认答案
+1. 单 Agent + 正确 Tool/Prompt 能否完成？
+2. 是否只是偶尔加载知识，用 Skill 即可？
+3. 是否只需隔离一次高噪声任务，用 Subagent？
+4. 是否需要大量同构扇出和交叉验证，用 Workflow？
+5. 是否真的需要成员持续通信、共享任务和互相挑战，才用 Team？
 
-[LangChain Multi-agent 官方指南](https://docs.langchain.com/oss/python/langchain/multi-agent) 明确指出：很多复杂任务用一个具有动态工具和正确 prompt 的 Agent 就能完成。真正需要 Multi-agent 的常见原因是：
+## 13. Permission、Approval、Sandbox 与 Network
 
-- **上下文管理**：不同专业知识不能同时塞入一个窗口；
-- **团队边界**：不同团队独立开发和维护能力；
-- **并行化**：子任务可以并发推进；
-- **工具过载**：工具太多导致主模型路由质量下降。
+四个概念应分开：
 
-官方归纳的主要模式包括：
+- **Permission**：允许访问哪些资源或调用哪些工具。
+- **Approval**：什么动作必须暂停让人/分类器决定。
+- **Sandbox**：操作系统或远端执行环境真正强制的文件/进程/网络边界。
+- **Network policy**：可访问的域、地址、协议和方法。
 
-- **Subagents**：主 Agent 把子 Agent 当工具，路由集中、结果回主 Agent；
-- **Handoffs**：状态变化触发角色、prompt 或工具集合切换；
-- **Skills**：仍是单 Agent，只按需加载知识和流程；
-- 更复杂的 Router 或自定义 LangGraph 工作流。
+各家官方路线：
 
-先问“谁应该看到哪些上下文、谁拥有最终决策、状态在哪里保存”，再选择模式。Multi-agent 的核心不是 Agent 数量，而是上下文工程和控制流。
+- **Codex**：Sandbox + Approval policy + Rules + Permission profile + Network proxy；项目 `.codex` 只在 Trust 后加载。原文：[Security](https://learn.chatgpt.com/docs/agent-approvals-security)。
+- **Claude Code**：Tool rules + Permission mode + Sandboxed Bash + Managed policy；Hook 能额外阻断，但 Hook 本身也需 Trust。原文：[Permissions](https://code.claude.com/docs/en/permissions)、[Sandbox](https://code.claude.com/docs/en/sandboxing)。
+- **LangChain/Deep Agents**：HITL Middleware 与 Backend Permission；任意 Shell/Sandbox execution 需要执行环境自己的隔离。原文：[Deep Agents Permissions](https://docs.langchain.com/oss/python/deepagents/permissions)、[Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)。
+- **OpenCode**：Tool Permission 为 allow/ask/deny；`--auto` 只放行 ask，不绕过 deny；Policy 是实验性资源规则。原文：[Permissions](https://opencode.ai/docs/permissions)。
+- **DeepSeek Harness**：Sandbox mode 和 Approval policy 是独立 knob；Approval 无应答或异常时 fail closed；官方不保证 Sandbox 绝对隔离。原文：[Permission presets](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/permission-presets.zh.md)、[Safety](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.zh.md)。
 
-### Deep Agents 已经内置什么
+共同建议：默认最小权限；Research/Plan 角色只读；写文件、外部发送、删除、Secret 和公网访问分开授权；不可信插件/MCP/Shell 是新的信任边界。
 
-[Deep Agents 概览](https://docs.langchain.com/oss/python/deepagents/overview) 将 Harness 能力分成四组：
+## 14. State、Persistence、Resume 与 Lifecycle
 
-1. **执行环境**：自定义工具、MCP、虚拟文件系统、可插拔后端、文件权限、可选沙箱和代码解释器。
-2. **上下文管理**：Skills、`AGENTS.md` memory、摘要、长工具结果卸载、长期存储和部分模型的 prompt cache。
-3. **委派**：可选 todo 规划，以及用内置 `task` 工具启动一次性 Subagent。
-4. **Steering**：在敏感工具调用前通过 LangGraph interrupt 暂停并接受批准、修改或拒绝。
+- **Codex**：Thread/Turn、Resume/Fork、History、Goal、Compaction；App Server 提供完整生命周期事件和中断。原文：[App Server lifecycle](https://learn.chatgpt.com/docs/app-server#lifecycle-overview)。
+- **Claude Code**：Session Resume/Fork、Checkpoint、Transcript；Agent SDK 可外接 SessionStore，Host 文档要求处理 Subprocess、取消、扩缩容和多租户。原文：[Sessions](https://code.claude.com/docs/en/sessions)、[SDK storage](https://code.claude.com/docs/en/agent-sdk/session-storage)。
+- **LangGraph**：Checkpointer 是 Thread 内恢复基础，Store 是跨 Thread 数据；Interrupt/Replay/Time travel/Drain 构成最完整的 Durable execution 模型。原文：[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)、[Fault tolerance](https://docs.langchain.com/oss/python/langgraph/fault-tolerance)。
+- **OpenCode**：Server 管理 Session/Message/Event，CLI 可 export/import；当前官网没有 LangGraph 式 Checkpoint/Replay 语义说明。原文：[Server](https://opencode.ai/docs/server)。
+- **DeepSeek Harness**：Append-only Session Event 是真源；Persistence 有 Flush checkpoint、冷恢复和 interrupted turn 修复；Cordis Effect 确保 Dispose/HMR。原文：[Persistence](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/persistence.zh.md)、[Lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/framework/index.zh.md)。
 
-Deep Agents 的 Subagent 每次获得新上下文，独立运行，最后只返回一次结果；默认是无状态的，不适合需要持续对话的团队协作。文件权限仅约束 Harness 文件工具；如果开放了任意 shell/sandbox 执行，还必须在执行环境层单独隔离。
+设计自己的 Agent 时，至少要有稳定 ID、显式状态机、原子/追加写、取消信号、崩溃恢复、后台任务清理和可解释终态。只保存聊天摘要不等于可恢复执行。
 
-### 从 LangChain 体系学习设计自己的 Agent
+## 15. 自动化、CI、定时与外部触发
 
-- 把 LLM 决策步骤和确定性业务步骤放进同一张可审计的状态图。
-- 中断时持久化状态，使审批、故障和长任务可以安全恢复。
-- Middleware 是 Agent loop 的扩展面，适合跨工具的限流、重试、摘要、审计与策略。
-- 记忆至少分 thread 内短期状态和跨 thread 长期存储，二者不能混为一谈。
-- 在创建 Multi-agent 前先解决 context routing；有时一个 Skill 或动态工具集更简单、更稳定。
+| 系统 | 非交互 | CI/代码托管 | 定时/事件 |
+| --- | --- | --- | --- |
+| Codex | [`codex exec`](https://learn.chatgpt.com/docs/non-interactive-mode) | [GitHub Action](https://learn.chatgpt.com/docs/github-action) | [Scheduled tasks](https://learn.chatgpt.com/docs/automations) |
+| Claude Code | [`claude -p`](https://code.claude.com/docs/en/headless) | [GitHub Actions](https://code.claude.com/docs/en/github-actions)、GitLab CI | [Cloud Routines](https://code.claude.com/docs/en/routines)、[Session schedules](https://code.claude.com/docs/en/scheduled-tasks) |
+| LangChain | Agent invoke/stream/API | LangGraph/LangSmith Deployment | 由应用/平台调度；不是 CLI 固定功能 |
+| OpenCode | `opencode run` | [GitHub](https://opencode.ai/docs/github)、[GitLab](https://opencode.ai/docs/gitlab) | GitHub Event/Schedule 示例 |
+| DeepSeek Harness | `headless`/SDK Profile | [GitHub Webhook review](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/github-review.zh.md) | [Session schedule](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/schedule.zh.md)、Webhook/Workflow/Job 子系统 |
 
-## 4. OpenCode：开源、可换模型的编码智能体
+自动化必须显式提供认证、最小权限、结构化输出、超时/取消、幂等和失败通知；交互模式中“可以问用户”的路径，在 CI 中通常必须改为预配置或失败。
 
-### 官方一键入口
+## 16. SDK、Server、Protocol、Streaming 与 Structured Output
 
-- [OpenCode 文档](https://opencode.ai/docs/) 与 [官方 GitHub 仓库](https://github.com/anomalyco/opencode)。
-- [CLI](https://opencode.ai/docs/cli)：TUI、`run`、`serve`、session、MCP、ACP 等命令。
-- [配置](https://opencode.ai/docs/config)：JSON/JSONC、多层配置合并和覆盖顺序。
-- [`AGENTS.md` Rules](https://opencode.ai/docs/rules)：项目指令、初始化和兼容指令来源。
-- [Agents](https://opencode.ai/docs/agents)：Primary agents、Subagents 与自定义 Agent。
-- [Tools](https://opencode.ai/docs/tools)、[Permissions](https://opencode.ai/docs/permissions) 和 [Custom tools](https://opencode.ai/docs/custom-tools)。
-- [Skills](https://opencode.ai/docs/skills)、[MCP servers](https://opencode.ai/docs/mcp-servers) 和 [Plugins](https://opencode.ai/docs/plugins)。
-- [Server](https://opencode.ai/docs/server) 与 [JavaScript/TypeScript SDK](https://opencode.ai/docs/sdk)。
+- **Codex SDK**：TypeScript/Python 控制 Thread；[App Server](https://learn.chatgpt.com/docs/app-server) 是更完整的 JSON-RPC 协议，覆盖 Thread、Turn、Event、Review、Approval、Skill、Auth、Filesystem。
+- **Claude Agent SDK**：把 Claude Code Agent loop 作为库，支持 Session、Custom tools、MCP、Tool search、Subagent、Hook、Permission、Structured output、OTel 和 Hosting。原文：[SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)。
+- **LangChain/LangGraph**：`create_agent`/Graph 是应用 SDK；Streaming 可投影 Token、Tool、State、Subagent；Structured output 可用 Provider/Tool strategy。LangSmith Agent Server 提供部署 API。
+- **OpenCode**：Server 暴露 OpenAPI 3.1/SSE，SDK 可启动 Server 或只连接 Client，并提供 Session/File/TUI/Auth/Event 和 JSON Schema output。原文：[Server](https://opencode.ai/docs/server)、[SDK](https://opencode.ai/docs/sdk)。
+- **DeepSeek Harness**：Python SDK 通过 NDJSON-RPC/stdio 驱动同版本 `dsh --profile sdk`；ACP 是另一自动化入口；LLM/Tool/Session 都有类型化事件协议。原文：[Python SDK](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/python-sdk.zh.md)。
 
-### 使用思路
+选型时不要只看“有没有 SDK”，还要看：是否能恢复 Session、是否有事件流、审批怎样回传、Structured output 失败怎样处理、工具取消和并发怎样建模、状态是否可外置。
 
-OpenCode 默认启动 TUI，也可用 `opencode run` 非交互运行。它采用客户端-服务器结构：TUI 是客户端，后端暴露 OpenAPI；`opencode serve` 可以单独启动无头服务器，SDK 可以启动或连接服务器。因此它很适合自建界面、编辑器集成或服务化调用。
+## 17. Observability、Evaluation 与 Production
 
-OpenCode 的配置来源会合并而不是整份替换，组织远程配置、全局配置、自定义配置、项目 `opencode.json` 和 `.opencode` 目录按优先级叠加。设计团队配置时要检查最终合并值，而不是只看仓库文件。
+- **Codex**：本地可选 OTel 事件/Metric，管理员有 Managed config/Analytics；自动化应保留 JSONL 和验证证据。原文：[Monitoring and telemetry](https://learn.chatgpt.com/docs/agent-approvals-security#monitoring-and-telemetry)。
+- **Claude**：Agent SDK 用 OpenTelemetry 导出 Trace/Metric/Event，可标注最终用户并控制敏感数据；Hosting 单独讨论 Session、Cost、Concurrency 和 Multi-tenant isolation。原文：[Observability](https://code.claude.com/docs/en/agent-sdk/observability)。
+- **LangChain**：LangSmith 是最完整的一体化 Trace/Eval/Studio/Deployment 路线；AgentEvals 支持轨迹和 Judge。原文：[Observability](https://docs.langchain.com/oss/python/langchain/observability)、[Evals](https://docs.langchain.com/oss/python/langchain/test/evals)。
+- **OpenCode**：Server/SDK 有 Event/Logging，CLI 有 stats；当前官方顶层文档没有专门 Agent Eval 体系。原文：[Server APIs](https://opencode.ai/docs/server#apis)。
+- **DeepSeek Harness**：Session telemetry 是可替换后端且有脱敏 waterfall；仓库开发 CI 有门禁，但产品仍未安全审计，不能据此宣称 Production-ready。原文：[Telemetry](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/session-telemetry.zh.md)、[Development](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.zh.md)。
 
-### Agent、Skill、Tool、Plugin 的分工
+生产评估至少应覆盖：任务成功率、工具选择/参数正确率、轨迹、恢复成功率、人工拒绝率、延迟、Token/费用、权限违规、错误分类和代表性回归集。
 
-| 扩展 | 作用 |
-| --- | --- |
-| Primary agent | 用户直接切换的主角色；内置 Build 和只读倾向的 Plan |
-| Subagent | 由主 Agent 自动委派或用 `@` 手动调用的专门角色 |
-| Skill | 通过 `SKILL.md` 按需加载的流程与知识，兼容 `.opencode`、`.claude`、`.agents` 路径 |
-| Custom tool | 用 TypeScript/JavaScript 定义模型可调用函数，内部可调用其他语言脚本 |
-| MCP server | 通过标准协议连接外部工具；工具描述也会占用上下文 |
-| Plugin | 监听事件、修改行为、注入环境或增加工具的运行时扩展 |
-| SDK/Server | 以 API 方式管理 session、消息、文件、Agent 和事件 |
+## 18. 从五家官方文档归纳出的 Agent Harness 设计框架
 
-OpenCode 将权限动作解析为 `allow`、`ask` 或 `deny`，支持工具级和模式级规则。`--auto` 只自动批准原本需要询问的动作，显式 `deny` 仍然生效。不要因为使用 auto mode 就省略 deny 规则。
+### 18.1 Instructions
 
-### 从 OpenCode 学习设计自己的 Agent
+一次性要求放任务 Prompt；稳定仓库事实放 `AGENTS.md/CLAUDE.md`；路径特定规则局部加载；长流程做 Skill；强制策略落到 Permission/Hook/Sandbox。
 
-- 客户端和 Agent 运行服务器解耦，便于 TUI、Web、IDE 共用同一能力。
-- 配置采用可解释的分层合并，并提供 schema，适合组织、用户和项目三级治理。
-- Agent、Skill、Tool、Plugin 是不同扩展层，应保持清晰边界。
-- MCP 工具列表本身有上下文成本；需要按 Agent 启用，而不是全局堆积。
+### 18.2 State
 
-## 5. DeepSeek Harness：研究“一切皆插件”的 Agent 架构
+分开保存 Thread/Session state、跨会话 Memory、Task/Goal state、Append-only event/trace。所有状态有 Schema、稳定 ID、作用域、版本和恢复语义。
 
-### 先看状态和边界
+### 18.3 Verification
 
-[DeepSeek 官方仓库](https://github.com/deepseek-ai/deepseek-harness) 将 DeepSeek Harness（`dsh`）定义为开源 Agent Harness，底层由 Cordis 驱动，采用“Everything is a Plugin”架构。它与 LangChain 的 Deep Agents 不是同一个项目。
+让 Agent 能自己运行 Test/Build/Lint/Schema/Visual diff；记录命令和结果；重要任务用新 Context Reviewer 或 Eval 推翻结论。没有证据只能叫“声称完成”。
 
-截至核验日，官方仍把它标为**开发者预览**，并警告未来会有破坏兼容性的变更。[官方安全说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.zh.md) 还指出项目尚未经过安全审计，能够执行模型生成的命令、加载第三方插件并访问被开放的文件、网络、进程和凭据；沙箱、审批和权限只能降低风险，不能保证隔离。实验时优先使用一次性虚拟机、容器或专用环境，并坚持最小权限。
+### 18.4 Scope
 
-### 官方一键入口
+默认最小目录、最小 Tool、最小网络和最小 Secret；Research 只读；并行 Worker 有明确文件所有权；外部 MCP/Plugin/CLI 均作为信任边界。
 
-- [中文 README 与运行方法](https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md)：`npx @deepseek-ai/dsh web` 或从源码构建。
-- [官方文档站](https://deepseek-harness.github.io/deepseek-harness/) 与 [Web UI 指南](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/index.zh.md)。
-- [架构总览](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md)：Cordis、Profile、Bundle、Patch、Agent loop 与能力 seam。
-- [Cordis 入门](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.zh.md) 与 [进入 Harness 的插件教程](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-tutorial/07-into-the-harness.zh.md)。
-- [第一个插件](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/index.zh.md)、[开发工具](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/tool.zh.md) 和 [插件配置](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/config.zh.md)。
-- [Service Definition / Provider / Consumer 三角色设计](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/practice/index.zh.md)。
-- [Subagent 子系统](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.zh.md)、[实验性 Agent Teams 子系统](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/agent-team.zh.md)。
-- [审批子系统](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/approval.zh.md)、[权限预设](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/permission-presets.zh.md) 和 [会话持久化](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/persistence.zh.md)。
-- [Python SDK 指南](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/python-sdk.zh.md) 与 [连接记忆 MCP 的官方示例](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/mcp-memory.zh.md)。
+### 18.5 Lifecycle
 
-### 最小体验
+明确 Bootstrap、Trust、Run、Pause、Approval、Cancel、Compact、Checkpoint、Resume、Handoff、Complete/Failed/Blocked 和 Teardown。后台任务和插件注册必须能清理。
 
-安装 Node.js 后可直接启动：
+## 19. 实践路线
 
-```bash
-npx @deepseek-ai/dsh web
-```
+1. 选择 Codex 或 Claude Code，在熟悉仓库完成三个小任务，每个都写清验收并让 Agent 自证。
+2. 把重复纠正沉淀成简短 `AGENTS.md/CLAUDE.md`，把偶尔使用的长流程做成 Skill。
+3. 接一个 MCP，检查 Tool schema、Context 成本、认证和 Permission。
+4. 用一个只读 Subagent 做代码库研究，再用独立 Reviewer 验证，观察上下文与成本。
+5. 用 LangChain `create_agent` 做最小 Agent，加 Structured output、Middleware、Checkpointer、Store 和 HITL。
+6. 用 LangGraph 实现一次可暂停、可恢复、可 Replay 的有状态流程。
+7. 阅读 DeepSeek Harness 的 Session、Tool、Service/Event、Provider 和 Lifecycle 设计，尝试替换一个 Provider。
+8. 只有明确需要共享任务和直接通信时，再实验 Agent Team。
 
-默认 Web UI 地址是 `http://127.0.0.1:3080`。在设置中配置模型，选择工作区后即可让 Agent 读取/编辑文件、运行命令、委派工作和维护计划。正式试验前先阅读安全说明；不要把包含敏感凭据的宿主目录直接暴露给它。
+## 20. 最终检查表
 
-### Cordis 的五个核心概念
+### 使用 Agent
 
-1. **Plugin**：实现能力的对象或 `Service` 子类，加载和卸载由框架管理。
-2. **Context**：服务容器；消费者通过稳定的 `ctx.<key>` 找服务，而不是导入具体实现。
-3. **Dependency injection**：插件用 `inject` 声明依赖，依赖未就绪时等待，不手写启动顺序。
-4. **Typed events**：服务用 `emit`、`waterfall`、`parallel`、`serial`、`bail` 等明确语义通信。
-5. **Reversible effects**：工具、prompt 片段、adapter、provider、listener 的注册都应有 disposer，支持 reload 和 teardown。
+- [ ] Prompt 是否说明结果、上下文、边界和验收？
+- [ ] 是否先研究/计划了真正复杂的改动？
+- [ ] 项目指令是否短、稳定、无冲突并能确认已加载？
+- [ ] Context 是否只含相关材料，长日志是否隔离/压缩？
+- [ ] 是否使用最小 Tool、目录、网络和 Secret？
+- [ ] Agent 是否实际执行验证并给出证据？
+- [ ] 并行任务是否有 Worktree 或互斥文件所有权？
+- [ ] 最终状态是否区分 Complete、Failed、Blocked？
 
-这使模型适配器、工具注册表、会话日志、Agent loop 本身都可由配置替换，而不是修改一个特权内核。
+### 设计 Agent
 
-### Profile、Bundle 与 Patch
-
-运行中的 `dsh` 是一棵插件树：Profile 表示一个具名组装，Bundle 分发一组 Cordis 配置，Patch/overlay 对上层配置进行替换或插入。官方提供 `web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` 等 Profile。可用下面的命令查看最终配置树：
-
-```bash
-dsh --profile web --dump-config
-```
-
-这种设计很适合多前端、多个运行环境共享能力：底层 Agent loop 和持久化不变，只替换 Web、SDK、ACP 或模型/工具 Provider。
-
-### 能力的三角色拆分
-
-DeepSeek Harness 官方以 Bash 能力为例拆成：
-
-- **Service Definition**：定义稳定接口与请求/结果类型；
-- **Service Provider**：提供具体实现，例如本地执行或远端沙箱；
-- **Consumer**：把能力暴露成模型工具或给其他服务使用。
-
-Provider 可以替换，Definition 和 Consumer 不需要同步改动。设计自己的 Harness 时，这比让工具直接依赖某个执行库更利于演进、测试和安全替换。
-
-### 状态、安全和协作上的设计启发
-
-- 会话采用只追加事件日志作为真源，持久化后端可替换；flush、崩溃恢复和被中断轮次有明确语义。
-- 审批结果是闭合集合，缺少应答者或异常时 fail closed，而不是默认放行。
-- 沙箱模式与审批策略是两个独立 knob，权限预设只是组合它们，不能替代真实执行层的强制措施。
-- Subagent Provider 公开能力声明；请求不被支持时明确失败，避免静默降级。
-- Agent Teams 不只是并行调用，还建模身份、持久 mailbox、共享任务 DAG 和回放。
-- 每个插件注册都可逆，支持热重载和可靠 teardown；这是长期运行 Agent 服务经常缺失的一层。
-
-## 6. 五种方案的多智能体模型对比
-
-| 系统 | 拓扑 | 状态/通信 | 最适合 | 关键风险 |
-| --- | --- | --- | --- | --- |
-| Codex Subagents | 主 Agent → 子 Agent → 汇总 | 子上下文隔离，结果回主 Agent | 并行调研、代码探索、独立评审 | 并发写冲突、额外 token |
-| Claude Subagents | 主会话集中委派 | 独立上下文，通常单次结果回传 | 专业角色、减少主上下文污染 | 描述过多也会占启动上下文 |
-| Claude Agent Teams | Lead + 对等 Teammates | 共享任务、直接消息、独立会话 | 需要互相挑战和协调的研究/开发 | 实验性、成本高、文件冲突 |
-| LangChain/Deep Agents | Subagent-as-tool 或自定义图 | graph state、checkpointer/store、interrupt | 嵌入业务产品的可控工作流 | 架构复杂度和可观察性成本 |
-| OpenCode | Primary agent + Subagent | 主会话委派，可自定义角色和权限 | 开源编码助手的专门角色 | 工具/MCP 过多导致上下文拥挤 |
-| DeepSeek Harness | 可插拔 Subagent Provider；实验 Team | 事件日志、持久 mailbox、任务 DAG | 研究可替换的多 Agent 基础设施 | 预览期、API 变化、安全未审计 |
-
-选择顺序建议：
-
-1. 一个 Agent + 少量合适工具能否完成？
-2. 是否只需按需加载 Skill，而不是新 Agent？
-3. 是否只需一个隔离上下文、单次回传结果的 Subagent？
-4. 任务是否真的需要 Agent 之间持续通信、共享任务和互相挑战？只有此时再上 Team。
-
-## 7. 设计自己的 Agent：五层 Harness
-
-### 7.1 Instructions：告诉 Agent 怎样工作
-
-- 仓库根指令只放稳定、通用、可验证的规则。
-- 子目录规则只在相关代码范围加载。
-- 一次性需求留在用户任务里；可复用复杂流程做成 Skill。
-- 强制安全策略不要只写成自然语言，必须落到权限、沙箱或 Hook。
-
-### 7.2 State：让长任务可以恢复
-
-至少区分四类状态：
-
-- 当前 thread 的消息和工作状态；
-- 跨会话的项目记忆与用户偏好；
-- 可机读任务清单及状态；
-- 只追加运行事件、工具证据和检查点。
-
-不要把聊天摘要当作唯一真源。对长任务，状态应有 schema、稳定 ID、原子写入、恢复规则和失败后的重放/补偿策略。
-
-### 7.3 Verification：定义什么时候才算完成
-
-验证门槛应能被 Agent 自己执行：
-
-- 单元/集成测试、build、lint、typecheck；
-- 结构化 schema 校验；
-- UI 截图或视觉 diff；
-- 关键行为的固定样例；
-- 独立 Reviewer 尝试推翻实现结论。
-
-让 Agent 回报命令、退出码和关键输出。没有证据时，状态只能是“声称完成”。
-
-### 7.4 Scope：限制 Agent 能影响什么
-
-- 默认最小工具集、最小目录和最小网络域名。
-- 研究/规划角色优先只读；写入与外部副作用单独授权。
-- 高风险动作采用 `ask/approve/edit/reject` 或同等审批模型。
-- Subagent 权限不得因为继承而意外放大。
-- shell 执行和 MCP 服务都应视为新的信任边界。
-
-### 7.5 Lifecycle：可靠地启动、交接、停止和恢复
-
-成熟 Agent 要明确：
-
-- 启动时加载哪些配置、指令、工具和状态；
-- 如何做环境自检与依赖检查；
-- 工具、插件和后台任务如何取消与清理；
-- 会话压缩或重启前如何写 handoff；
-- 崩溃后从哪个 checkpoint 恢复；
-- 如何判定 complete、blocked、failed，避免无限循环或虚假完成。
-
-## 8. 一个可落地的仓库级 Harness 骨架
-
-下面是产品中立的参考，不要求所有工具采用相同文件名：
-
-```text
-repo/
-├── AGENTS.md                 # 稳定的项目规则、命令、边界和验收要求
-├── agent/
-│   ├── feature_list.json    # 可机读任务/功能状态与验收项
-│   ├── progress.md          # 面向人的进展、证据、问题和决策
-│   ├── session-handoff.md   # 下次会话恢复所需最小信息
-│   ├── init.sh              # 幂等环境自检/初始化入口
-│   └── evals/               # 固定样例、回归集、评分与审查脚本
-├── .agents/skills/          # 可跨兼容 Agent 使用的渐进加载 Skills
-└── src/ ...
-```
-
-建议的停止协议：只有验收命令通过、证据记录完整、任务状态原子更新后才能标记完成；需要用户选择时写清 blocker 和候选项；不得因为上下文快满或时间较长而伪造完成。
-
-## 9. 推荐学习与实践顺序
-
-### 第一阶段：把一个编码 Agent 用好
-
-1. 读 [Claude Code 最佳实践](https://code.claude.com/docs/en/best-practices) 和 [Codex `AGENTS.md`](https://learn.chatgpt.com/docs/agent-configuration/agents-md)。
-2. 为一个熟悉仓库写 50～150 行项目指令，包含真实的 build/test 命令。
-3. 连续完成三个小任务，每次都要求 Agent 自己运行验证并展示证据。
-
-### 第二阶段：掌握上下文与复用
-
-1. 把高噪声研究交给 Subagent，对比主上下文消耗和结果质量。
-2. 把一个重复流程做成 Skill；只在匹配任务时加载。
-3. 接入一个 MCP 服务，记录工具描述带来的上下文成本和权限边界。
-
-### 第三阶段：做持久、可控的 Agent
-
-1. 用 LangChain `create_agent` 做最小 loop。
-2. 增加 structured output、checkpointer、store、middleware 和 HITL。
-3. 用 LangSmith trace 找一次工具选择错误或恢复错误，并做回归用例。
-
-### 第四阶段：研究 Harness 架构
-
-1. 用 Deep Agents 快速体验文件系统、Subagent、Skills 和 approval。
-2. 阅读 DeepSeek Harness 的 Cordis、Profile/Patch 和三角色能力设计。
-3. 自己实现一个可替换 Provider：同一 Service Definition 下切换本地实现和沙箱实现。
-4. 只有明确需要通信和共享任务时，再实验 Claude Agent Teams 或自定义多 Agent 图。
-
-## 10. 设计/评审检查表
-
-### 使用现成 Agent
-
-- [ ] 目标、范围、相关路径和验收条件是否明确？
-- [ ] Agent 是否先探索和计划，再修改？
-- [ ] 项目指令是否短、无冲突、命令可执行？
-- [ ] 是否给了测试/build/lint/截图等完成信号？
-- [ ] 是否使用了最小权限和最小工具集？
-- [ ] 并行 Agent 是否拥有互不冲突的文件或只读任务？
-- [ ] 最终结果是否包含可核验的证据？
-
-### 设计自己的 Agent
-
-- [ ] Agent loop、deterministic workflow 和 UI/transport 是否解耦？
-- [ ] 工具 schema 是否清楚，错误、超时、取消和重试语义是否明确？
-- [ ] thread state、long-term memory、task state、event log 是否分层？
-- [ ] 中断、审批、崩溃和上下文压缩后能否恢复？
-- [ ] 权限、审批、沙箱是否各自建模并 fail closed？
-- [ ] Skills/工具是否渐进暴露，避免上下文和工具过载？
-- [ ] 是否有 trace、指标、回归集和独立验证？
-- [ ] 插件和后台任务是否有可逆注册、取消与 teardown？
-- [ ] Multi-agent 是否解决了明确问题，而不是为了形式上的“多个 Agent”？
+- [ ] Agent loop、Deterministic workflow、UI/Transport 是否解耦？
+- [ ] System Prompt、Runtime context、Tool schema、Response format 是否分层？
+- [ ] Tool error、Timeout、Cancel、Retry、Idempotency 是否明确？
+- [ ] Thread state、Long-term memory、Task state、Event log 是否分层？
+- [ ] Permission、Approval、Sandbox、Network 是否分别建模并 fail closed？
+- [ ] Interrupt、Crash、Compaction、Deploy 后是否可恢复？
+- [ ] Skill/Tool 是否渐进暴露，避免 Context/Tool overload？
+- [ ] 是否有 Trace、Metric、Eval、Regression 和安全审计？
+- [ ] Plugin/Hook/Background task 是否可 Dispose/Drain？
+- [ ] Multi-agent 是否解决了清晰问题，并限制 Depth、Concurrency、Spend 和写冲突？
 
 ## 总结
 
-真正高质量的 Agent 系统，不是“更长的提示词”或“更多的 Agent”，而是把正确上下文在正确时间交给模型，同时让状态可恢复、工具有边界、结果可验证、生命周期可控制。
+五家官方文档虽然产品形态不同，但共同指向同一件事：可靠 Agent 的关键不是更长 Prompt 或更多 Agent，而是正确的 Context、清晰的 Tool、持久的 State、可执行的 Verification、最小的 Scope 和完整的 Lifecycle。
 
-- 从 Codex 学分层指令、Skills、沙箱/审批和自动化接口。
-- 从 Claude Code 学上下文管理、验证闭环以及 Subagent/Team 的使用边界。
-- 从 LangChain/LangGraph/Deep Agents 学 Agent loop、状态图、持久化、Middleware 和 HITL。
-- 从 OpenCode 学开源客户端-服务器架构、多层配置与扩展面的划分。
-- 从 DeepSeek Harness 学插件容器、能力 seam、可替换 Provider、事件日志和可逆生命周期。
-
-先把单 Agent 的指令、状态、验证、范围和生命周期做扎实，再引入 Multi-agent，通常会得到更简单、更便宜、也更可靠的系统。
+从使用角度，Codex 的定制层次和 Claude Code 的工程闭环最值得直接照做；OpenCode 的开源 Client/Server 与配置系统适合自托管。从构建角度，LangChain/LangGraph/Deep Agents 提供最完整的应用框架路线；DeepSeek Harness 则提供最细的插件、事件、会话日志和可替换能力 seam 设计参考。
