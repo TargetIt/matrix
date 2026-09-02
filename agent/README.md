@@ -2,6 +2,8 @@
 
 调研日期：2026-08-25
 
+官方专题：[Codex、Claude Code、LangChain、OpenCode 与 DeepSeek Harness 官方指南](official-agent-guide.md)（2026-09-02 核验，含使用路径、多智能体对比和自建 Harness 设计方法）。
+
 参考对象：[AIHero](https://www.aihero.dev/)。
 
 AIHero 的核心定位不是泛泛讲 AI，而是把 coding agents 当成真实工程工具来使用：从需求澄清、上下文收集、计划、切片、测试、代码审查到交付，强调 engineering fundamentals、可安装 skills、AGENTS.md/CLAUDE.md、上下文管理和 human-in-the-loop。
@@ -87,4 +89,3 @@ AIHero 的核心定位不是泛泛讲 AI，而是把 coding agents 当成真实�
 - Anthropic Claude Code Best Practices
 - HumanLayer: Advanced Context Engineering for Coding Agents
 - AGENTS.md
-
