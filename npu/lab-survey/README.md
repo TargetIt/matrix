@@ -2,7 +2,7 @@
 
 调研日期：2026-08-31
 
-专题调研：[移动 GPU 实时超分辨率与插帧实验](mobile-gpu-super-resolution-frame-generation.md)
+专题调研：[移动 GPU 实时超分辨率与插帧实验](../../gpu/超分插值/mobile-gpu-super-resolution-frame-generation.md)
 
 ## 结论
 
