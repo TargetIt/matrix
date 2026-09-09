@@ -1,5 +1,6 @@
 # GPU 调研
 
+- [Compressed Weights 专题](compressed-weights/README.md)：Mali G2-Ultra NX 官方证据、Arm 历史硬件与 Vela 编码器、模型到运行时的数据链路，以及高通 LPBQ、NVIDIA 稀疏/LUT、Apple ANE/ASTC 对照。
 - [Motion Engine 专题](motion-engine/README.md)：Arm 发布与 NFRU 源码、SAD/MAC 计算量、可能的硬件实现，以及 NVIDIA/高通/苹果对照；附复算脚本。
 - [Arm 移动 GPU 的 AI / 神经网络能力演进](arm-ai/README.md)：从 Midgard/Bifrost 通用计算、INT8 dot、Valhall、矩阵指令与 Vulkan ML，到 2026 Mali G2-Ultra NX 专用 Neural Accelerator；含演讲、论文、GitHub、Hugging Face 与芯片评估建议。
 - [超分与插帧](超分插值/README.md)：GPU 厂商神经超分/帧生成对照，以及移动 GPU 可复现实验路径。
