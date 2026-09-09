@@ -200,7 +200,7 @@ Arm 在 2025 demo 中给出的目标是 540p → 1080p、约 4 ms，并称可节
 
 进一步阅读：[Motion Engine 专题](../motion-engine/README.md)，包含四尺度块匹配计算量、CNN 逐层 MAC、SDK 分辨率上限，以及参考模型与 SDK hint 来源的差异。
 
-[NFRU](https://huggingface.co/Arm/neural-frame-rate-upscaling)在两张真实渲染帧之间生成一张中间帧，是**插值**而不是外推，因此引入可预测的一帧等待延迟。当前公开实现包含：
+[NFRU](https://huggingface.co/Arm/neural-frame-rate-upscaling)在两张真实渲染帧之间生成一张中间帧，是**插值**而不是外推，因此需要等待未来真实帧并安排送显。不能笼统认定固定增加一帧延迟；Arm 演讲表述及其时序边界见 [Motion Engine 专题](../motion-engine/README.md#8-自研移动-gpu-应测什么)。当前公开实现包含：
 
 - 引擎 motion vector；
 - 六层 block-matching optical flow；
@@ -291,7 +291,7 @@ flowchart LR
 | 带宽 | L2/SLC hit、external read/write、image↔tensor 转换、历史反馈 |
 | 功耗 | 峰值和 10/20 分钟 sustained；固定 FPS 与固定画质两种口径 |
 | 画质 | PSNR/SSIM/LPIPS + 细线、粒子、透明、镜面、disocclusion、快速旋转主观序列 |
-| 延迟 | NSS 单帧链路；NFRU 固定一帧等待与 input-to-photon；不要只报告 delivered FPS |
+| 延迟 | NSS 单帧链路；NFRU 等待、计算、送显与 input-to-photon；不要只报告 delivered FPS |
 
 ## 11. 可直接复现的开源入口
 

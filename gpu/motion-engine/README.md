@@ -1,12 +1,14 @@
 # Motion Engine 专题：Arm 光流加速、计算量与硬件取舍
 
-Motion Engine 的任务是从两帧图像中估计二维位移，为插帧提供运动对应关系。Arm 将它集成在 GPU 的 Neural Accelerator 中；矩阵乘加路径主要执行神经网络，Motion Engine 则针对搜索、差值归约和运动细化。两者的区别在于整个计算与访存模式，而不是有没有乘法器。[Arm 官方架构图][arm-slide]
+Motion Engine 的任务是加速光流估计，为插帧提供两帧之间的运动对应关系。Arm 将它画在 GPU 的 Neural Accelerator 内部；官方确认了光流加速功能，开源参考实现进一步显示搜索、差值归约和运动细化等工作。**这些步骤中哪些完全固化在 Motion Engine，公开材料尚未逐项说明。** 矩阵乘加路径主要面向神经网络；应从完整计算与访存模式比较两者。[Arm 官方架构图][arm-slide]、[光流参考实现][gym-block]
 
 面向移动 GPU 设计，核心结论有三点：**专用运动硬件的价值往往来自窗口数据复用与低延迟；NFRU 必须把光流、CNN 和 shader 分开核算；光流也可以重构为神经网络，NVIDIA DLSS 4 已给出实际反例。** 因而“有 MAC 就不需要 Motion Engine”和“光流永远不适合 MAC”都不成立。[NVIDIA DLSS 4 发布][nv-dlss4]
 
 ## 1. Arm 发布究竟确认了什么
 
 Arm 于 2026-09-08 发布 Mali G2-Ultra NX。[发布解析][arm-release]确认 Neural Accelerator 集成在 shader core 内，复用 GPU 内存系统、一致性缓存和控制结构。配套架构图明确画出内部的 Motion Engine，并标注 optical flow acceleration。
+
+更早的 Arm 原始演讲 [Mobile Neural Frame Rate Upscaling — A walkthrough（Josh Sowerby、Alfie Roberts，2026 年 7 月）][arm-nfru-talk]第 21 张幻灯片已明确将块匹配光流与 Motion Engine 硬件加速联系起来。因此应区分“7 月算法讲解”与“9 月 NX 产品架构发布”，不能把后者当成该术语首次公开。下文页码均指幻灯片印刷编号。
 
 图中还列出 INT8/INT16、whole tensor operations、压缩权重以及最高 2× GPU clock。这些是 **Neural Accelerator 整体的宣传规格**；不能据此认定 Motion Engine 的每条数据通路都是 INT8/INT16，也不能把时钟说明直接变成独立光流吞吐。官方没有披露 SAD lane 数、阵列尺寸、SRAM 容量/端口、每周期候选数或面积。
 
@@ -80,13 +82,25 @@ E_p(d)=\sum_{q\in W_p}|I_0(q)-I_1(q+d)|,\qquad
 d^*(p)=\operatorname*{argmin}_{d}E_p(d).
 $$
 
-核心是逐候选计算像素差值、累加并选最小值。亚像素和滤波阶段会用乘加，因此“Motion Engine 完全不用乘法”同样不准确。
+核心是逐候选计算像素差值、累加并选最小值。参考算法的亚像素和滤波阶段会用乘加；它们是否由 Motion Engine、共享算术路径或 shader 执行尚未公开，因此不能断言 Motion Engine 内部有或没有乘法器。
 
-### 3.2 SDK 的 hint 与参考模型不可混称
+### 3.2 CNN 的 16 个输入通道和 4 个输出，实际含义是什么
+
+[预处理源码][gym-preprocess]构造四张候选 RGB：前帧/后帧各自按引擎 MV 重采样，以及前帧/后帧各自按光流重采样。这给出 4×3=12 通道，再加两路归一化深度和两路遮挡揭露特征，合计 16 通道。**MV/flow 首先用于取样坐标，并非把其 x/y 分量直接拼进这 16 通道。**
+
+[后处理源码][gym-postprocess]对 CNN 的四路输出插值并做 softmax，得到四张候选 RGB 的融合权重，随后合成为输出图像。该版本 CNN 既不直接输出 RGB，也不直接预测一个新的二维光流场。这个分工解释了为什么已有神经加速器，仍需要运动估计和纹理取样路径。
+
+Arm 演讲第 25 张也特别强调：**不是先混合 MV 与 OF 矢量，而是分别生成颜色候选，再融合颜色。** 第 31–35、51–53 张说明另一项关键优化：低分辨率 scatter 运动、按深度补洞，再在高分辨率 gather 颜色；不把完整颜色都用原子操作向前散射。这里涉及纹理访问、深度竞争和整数原子操作，不能纳入 CNN MAC 数，更不能全部归给 Motion Engine。[原始演讲][arm-nfru-talk]
+
+源码还揭示了演讲与版本实现的差异：演讲第 51 张画出 12-bit depth + 4-bit 共享指数 + 两个符号位 + 两个 7-bit 尾数，共 32 位；但本报告固定 SDK 的 [quant.h][sdk-quant]实际使用 `31−14−2−4=11` 位深度，并清除最高位。其 [GLSL 回调][sdk-atomic]使用 `imageAtomicMax`，一次竞争同时保留胜出深度及关联运动。**这是 shader 中间数据的打包策略，不是 Motion Engine 内部精度规格。** 位宽评估应以对应版本源码为准。
+
+### 3.3 SDK 的 hint 与参考模型不可混称
 
 参考模型接收数据集提供的运动提示；当前 [SDK hint shader][sdk-hint]则用前帧深度和前后相机投影矩阵重投影，构造相机运动提示。代码明确说明，这种方法对动画物体会失效。因此这里的 hint 不能称为“包含全部物体运动的游戏引擎 MV”。引擎 MV 仍在 NFRU 其他步骤使用。
 
 [SDK opticalflow][sdk-of]绑定两帧颜色、hint 和输出 flow；这条路径不请求 cost 输出。后端通过 [Vulkan optical-flow pipeline][sdk-vk]创建独立光流图，而帧插值组件分别建立 preprocess shader、interpolation data graph、postprocess shader。[NFRU runtime][sdk-fi]
+
+这里“不请求 cost”只指不向应用输出 cost map。模拟器在启用 hint 时仍计算内部匹配代价，以比较 hint 和搜索结果。[makeReplaceWithMvInput][emu-of]中可以直接看到 RAW_SAD 和 MVReplace。网格默认优先选设备支持的 4×4，其次 8×8、2×2、1×1；网格表示输出矢量密度，不能直接解释为硬件模板尺寸。[SDK 默认网格选择][sdk-of]
 
 ## 4. 计算量：先确定分辨率和计数单位
 
@@ -120,6 +134,10 @@ $$
 最后的 hint 只增加一个候选代价，不是把已有 49 个候选全部删掉。默认以外，均值运动提示可能收缩搜索半径；实际硬件也可能采取未公开的优化。因此这里统计的是明确配置的参考工作量。[多尺度循环][gym-block]、[模拟器动态搜索逻辑][emu-of]
 
 这里还**没有**计入建金字塔、warp、亚像素求解、中值/双边滤波、hint 生成、数据转换和 dispatch。2.145 亿既不是完整光流操作总数，也不是时延预测。
+
+为避免把差值数误当总算术量，按逐窗口独立求和、逐位置选择展开，同一配置还对应 **205,899,840 次 SAD 归约加法**（每 25 项求和计 24 次），以及 **8,406,720 次最小值选择比较**（每 C 个候选计 C−1 次）。这只是该直接算法的基本归约计数，不是所有优化实现的下界；滑动窗口复用可改变加法数量。计数不包含 tie-break，也不等于 PyTorch 或 shader 实际指令数；绝对差本身也可能映射成一条或多条指令。
+
+搜索半径对工作量很敏感：固定其他条件，半径 1/2/3 分别对应 **42,039,000 / 111,015,000 / 214,479,000 SAD terms**。这些是受控参数敏感性分析，不是三个厂商质量档位的性能数据；更小半径可能漏掉运动。fast 档跳过双边滤波，也不能从 SAD 数不变推断耗时不变。
 
 ### 4.2 CNN：约 6.312 GMAC/生成帧
 
@@ -160,9 +178,11 @@ $$
 
 实际 [SDK 分辨率上限][sdk-caps]明确为：光流输入颜色高 1080、MV/depth 高 540、flow 高 270、tensor 高 270。[创建逻辑][sdk-fi]按宽高比降采样，并结合设备支持的光流网格。因此 1440p/4K 显示不意味着光流和 CNN 按显示像素等比例增长；最终合成及部分图像访问仍可能随输出分辨率增长。
 
+还有两个范围限制：上述 SAD 只计**一次配置方向的估计**，不能因为有前后两帧就自动乘 2；反过来，如果新算法明确运行双向估计，必须另加一份。多帧参数则仅用于参考源码的成本分析：[Arm NFRU 模型卡][hf-nfru]当前描述最高 2×，不能把脚本中设置三张生成帧解释成官方产品支持 4×。
+
 ### 4.4 访存可能比算术峰值更关键
 
-以 480×270 为例，若天真地物化所有 50 个候选的 5×5 uint8 patch，需要 **162 MB**；若物化 50 个 int32 cost，则约 **25.92 MB**。这只是中间表示大小的算例，**不是 Arm 芯片的 SRAM 容量或实际 DRAM 流量**。参考 PyTorch 的 unfold/gather 方便表达算法，硬件可流式产生候选，立即更新最小值，避免完整 cost volume 落地。
+以 480×270 为例，若天真地物化所有 50 个候选的 5×5 uint8 patch，需要 **162 MB**；若物化 50 个 int32 cost，则约 **25.92 MB**（本节 MB/KB 均为十进制）。这只是中间表示大小的算例，**不是 Arm 芯片的 SRAM 容量、PyTorch 峰值显存或实际 DRAM 流量**；PyTorch unfold 的浮点临时量还可能更大。硬件可流式产生候选，立即更新最小值，避免完整 cost volume 落地。
 
 相比之下，16 通道 INT8 CNN 输入为 2.07 MB，首层 32 通道 activation 为 4.15 MB，全部卷积权重若按 INT8 存放约 103 KB。局部 tiling、halo、缓存驻留和算子融合会显著影响数据流量；需要测量每级缓存与 DRAM，不能仅凭张量尺寸相加得到带宽。
 
@@ -192,6 +212,8 @@ $$
 
 若进一步改为 learned optical flow，卷积、相关性计算和特征变换可能成为主体，Tensor/MAC 加速便很合理。NVIDIA DLSS 4 已公开采用这条路线，见第 7 节。因此应比较完整的“算法 + 硬件 + 存储”方案，而不是只比较一种算子的电路。
 
+原始研究可参考 Teed 与 Deng 的 [RAFT（ECCV 2020）][raft-paper]及[作者代码][raft-code]：用特征、全对相关体和循环更新估计光流，显示运动估计确实能重构成包含大量卷积/相关性计算的网络。但相关体容量、迭代次数和取样仍会限制性能。RAFT 用于解释计算形态，**不是 Arm NFRU 或 NVIDIA DLSS 4 的已确认网络架构**。
+
 ## 6. Motion Engine 可能怎样实现
 
 下表是**设计假设，不是 Arm 公布的微架构**。它可用于自研方案讨论和向 IP 厂商提问。
@@ -206,6 +228,8 @@ $$
 | 与 GPU 的共享接口 | 任务提交、缓存一致性、结果交付 | 并发能力、资源竞争、调度延迟 |
 
 一个简单的位宽推导：uint8 的单像素绝对差最大为 255；5×5 SAD 最大 6,375，数学上 13 个无符号位可容纳。16-bit 累加器可以留出实现余量。**这不能推导 Arm 内部位宽**：图像归一化、正则项、亚像素和滤波会有其他精度需求。
+
+普通 MAC 也可以扩展为同时支持乘加与 SAD/min 的多模式执行单元，节省部分寄存器、控制和数据通路。工程代价是额外 mux/控制、不同归约网络，以及两种工作争用吞吐。是否拆成独立引擎，要看面积、关键路径、利用率和调度，而非逻辑上绝对不能共享。这里没有假定 Arm 使用独立 systolic array 或完全独立的 SRAM。
 
 同理，49 个相邻候选的 5×5 搜索块在一个位置上覆盖 11×11 搜索区域，而不是 49×25 个互不相同的像素。窗口缓存能利用这类重叠；跨位置、跨层与 warp 后的复用程度还取决于实际数据流。
 
@@ -262,11 +286,13 @@ Snapdragon 8 Gen 1 发布时出现的 [Adreno Frame Motion Engine（AFME）][qc-
 
 插帧依赖前后两张真实帧，会引入等待与显示安排问题；“输出 120 FPS”不能等同于“120 FPS 原生输入响应”。专用 Motion Engine 的作用是缩短其中的运动估计环节，而不是自动消除整条管线延迟。
 
+Arm 7 月演讲第 13 张讲者备注使用“增加半帧延迟”的描述，但没有在该句给出完整送显时序或 frame 单位定义。不能把它扩展成所有集成固定增加半帧，也不应笼统写成固定一帧；应分别测量等待未来真实帧、算法执行、排队和送显。[演讲原稿][arm-nfru-talk]
+
 建议向 Arm 或其他 IP 提供方追问四组参数：每周期候选/像素吞吐与支持精度；SRAM/缓存及数据格式；哪些滤波/细化硬化、哪些回到 shader；与 MAC/纹理执行资源是否共享、是否可并发。没有这些参数，不宜直接由宣传 TOPS 做 PPA 预算。
 
 ## 9. 复算、版本与证据边界
 
-本专题对应资料截止 2026-09-09。Arm 新发布只确认功能与集成层级，没有得到独立真机光流 PPA；不同厂商的宣传比例不用于跨平台排名。Model Gym 与模拟层算法可读，生产 SDK 有独立分辨率策略，三者不被假定逐操作等价。
+本专题对应资料截止 2026-09-09。Arm 新发布只确认功能与集成层级，没有得到独立真机光流 PPA；不同厂商的宣传比例不用于跨平台排名。Model Gym 与模拟层算法可读，公开集成 SDK 有独立分辨率策略，三者不被假定逐操作等价。
 
 [计算脚本 estimate_work.py](estimate_work.py)仅依赖 Python 标准库，打印四尺度 SAD 工作量、16 层卷积 MAC、参数量及中间表示大小：
 
@@ -274,15 +300,20 @@ Snapdragon 8 Gen 1 发布时出现的 [Adreno Frame Motion Engine（AFME）][qc-
 python3 gpu/motion-engine/estimate_work.py
 python3 gpu/motion-engine/estimate_work.py --width 2560 --height 1440
 python3 gpu/motion-engine/estimate_work.py --base-fps 60 --json
+python3 gpu/motion-engine/estimate_work.py --search-radius 1 --no-hints
+python3 gpu/motion-engine/test_estimate_work.py
 ```
 
-脚本要求宽高为正且可被 8 整除，以保证这里分析的 CNN skip/上下采样尺寸一致；它不表示硬件只支持这些尺寸。默认输出应包含 `214479000 SAD terms/pair` 与 `6312038400 MACs/generated frame`。16 层通道、kernel 与唯一 stride-2 配置已与固定上游源码的 AST 交叉核对；没有在模拟器或真机运行完整 NFRU benchmark。
+脚本要求宽高为正整数且可被 8 整除，以保证这里分析的 CNN skip/上下采样尺寸一致；它不表示硬件只支持这些尺寸。默认输出应包含 `214479000 SAD terms/pair` 与 `6312038400 MACs/generated frame`。JSON 明确列出未统计工作和“未应用 SDK 上限”的范围。16 层通道、kernel 与唯一 stride-2 配置已与固定上游源码的 AST 交叉核对；没有在模拟器或真机运行完整 NFRU benchmark。
+
+生态复现入口可从 [Hugging Face NFRU 模型卡][hf-nfru]开始：其中列出权重、VGF 和场景。权重/模型内容采用 Arm AI Model Community License，与 Apache-2.0 源码分开审查；模型卡与 main 资源会更新，应保存版本。模型卡中部分路线说明可能滞后于已更新源码，判断已实现能力时优先检查固定 commit。NVIDIA/高通/苹果没有在本报告引用材料中提供与 Arm 同口径的网络层及完整工作量，因而比较表保留功能/拓扑，不补造跨厂商 TOPS。
 
 最值得依次阅读的来源如下。代码链接在第 2–4 节固定 commit，发布/演讲链接保留官方原页。
 
 | 来源 | 发布者/时间 | 优先阅读内容 |
 | --- | --- | --- |
 | [G2-Ultra NX 发布解析][arm-release]、[原始架构图][arm-slide] | Arm，2026-09-08 | Motion Engine 的真实位置与公开规格 |
+| [NFRU 原始演讲 PDF][arm-nfru-talk] | Arm，2026-07 | 第 21/25/31–35/51–53 张：硬件联系、颜色融合、scatter/gather、原子打包 |
 | [BlockMatchV321][gym-block]、[NFRU 网络][gym-nn] | Arm，固定 2026-09-08 快照 | 搜索循环、默认层级、真实网络计算 |
 | [光流模拟 shader][emu-block]、[多尺度调度][emu-of] | Arm，固定快照 | Motion Engine 注释、SAD、hint 与过滤 |
 | [SDK 分辨率配置][sdk-fi]、[hint shader][sdk-hint] | Arm，固定快照 | 实际集成如何控制计算量 |
@@ -292,6 +323,8 @@ python3 gpu/motion-engine/estimate_work.py --base-fps 60 --json
 | [Adreno 运动估计][qc-me]、[扩展规范][qc-spec] | Qualcomm/Khronos，2021/2020 | 纹理单元块匹配及接口 |
 | [Adreno Neural Fusion][qc-fusion] | Qualcomm，2026-09-02 | 新 GPU Matrix Cores 与本地存储 |
 | [MetalFX 插帧演讲][apple-metal]、[视频处理演讲][apple-video] | Apple，WWDC25 | 游戏与视频的功能、输入和时序约束 |
+| [NFRU 模型卡][hf-nfru] | Arm，查询于 2026-09-09 | 模型参数预测、最高 2×、权重/VGF/许可证 |
+| [RAFT 论文][raft-paper]、[作者代码][raft-code] | Zachary Teed、Jia Deng，2020 | 神经光流的原始研究；不代表厂商具体算法 |
 
 相关：[Arm GPU AI 历代演进](../arm-ai/README.md) · [GPU 调研目录](../README.md)。
 
@@ -326,3 +359,10 @@ python3 gpu/motion-engine/estimate_work.py --base-fps 60 --json
 [qc-fusion]: https://www.qualcomm.com/news/onq/2026/09/adreno-neural-fusion-ai-rendering
 [apple-metal]: https://developer.apple.com/videos/play/wwdc2025/211/?time=437
 [apple-video]: https://developer.apple.com/videos/play/wwdc2025/300/
+[gym-postprocess]: https://github.com/arm/neural-graphics-model-gym/blob/b86ee99125ea01c9ec1acf471743e5eb2478414a/src/ng_model_gym/usecases/nfru/model/shaders/sa/40_postprocess.slang#L115
+[hf-nfru]: https://huggingface.co/Arm/neural-frame-rate-upscaling
+[raft-paper]: https://arxiv.org/abs/2003.12039
+[raft-code]: https://github.com/princeton-vl/RAFT
+[arm-nfru-talk]: https://huggingface.co/Arm/neural-frame-rate-upscaling/blob/main/2026-neural-frame-rate-upscaling.pdf
+[sdk-quant]: https://github.com/arm/neural-graphics-sdk-for-game-engines/blob/aba0d109ffcfb97e380ac0a68fb11683e5561c6e/sdk/include/FidelityFX/gpu/frameinterpolation/quant.h#L20
+[sdk-atomic]: https://github.com/arm/neural-graphics-sdk-for-game-engines/blob/aba0d109ffcfb97e380ac0a68fb11683e5561c6e/sdk/include/FidelityFX/gpu/frameinterpolation/ffx_frameinterpolation_callbacks_glsl.h#L651
