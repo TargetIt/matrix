@@ -40,6 +40,7 @@ python3 -m http.server 4173
 
 ## GPU 专题调研
 
+- [Motion Engine：光流加速、计算量与硬件取舍](gpu/motion-engine/README.md)
 - [Arm 移动 GPU 的 AI / 神经网络能力演进](gpu/arm-ai/README.md)
 - [超分与插帧调研](gpu/超分插值/README.md)
 

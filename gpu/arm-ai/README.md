@@ -198,6 +198,8 @@ Arm 在 2025 demo 中给出的目标是 540p → 1080p、约 4 ms，并称可节
 
 ### 8.2 NFRU：光流 + 引擎 MV + 小 CNN 的混合系统
 
+进一步阅读：[Motion Engine 专题](../motion-engine/README.md)，包含四尺度块匹配计算量、CNN 逐层 MAC、SDK 分辨率上限，以及参考模型与 SDK hint 来源的差异。
+
 [NFRU](https://huggingface.co/Arm/neural-frame-rate-upscaling)在两张真实渲染帧之间生成一张中间帧，是**插值**而不是外推，因此引入可预测的一帧等待延迟。当前公开实现包含：
 
 - 引擎 motion vector；
