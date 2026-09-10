@@ -40,10 +40,10 @@ python3 -m http.server 4173
 
 ## GPU 专题调研
 
-- [GPU Tensor FP8：A20 Pro、超分插帧与神经图形](gpu/fp8-tensor/README.md)
-- [Motion Engine：光流加速、计算量与硬件取舍](gpu/motion-engine/README.md)
-- [Arm 移动 GPU 的 AI / 神经网络能力演进](gpu/arm-ai/README.md)
-- [超分与插帧调研](gpu/超分插值/README.md)
+- [GPU Tensor FP8：A20 Pro、超分插帧与神经图形](gpu/fp8-tensor/GPU-Tensor中的FP8：A20-Pro、超分插帧与神经图形.md)
+- [Motion Engine：光流加速、计算量与硬件取舍](gpu/motion-engine/Motion-Engine专题：Arm光流加速、计算量与硬件取舍.md)
+- [Arm 移动 GPU 的 AI / 神经网络能力演进](gpu/arm-ai/Arm移动GPU的AI与神经网络能力演进.md)
+- [超分与插帧调研](gpu/超分插值/超分与插帧调研索引.md)
 
 ## 质量与回归
 

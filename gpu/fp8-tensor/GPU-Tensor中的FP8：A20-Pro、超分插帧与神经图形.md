@@ -212,7 +212,7 @@ RTXNTC 是神经纹理压缩/解压。Inference on Sample 在 pixel/ray shader �
 
 ### 7.1 换格式不会减少网络的数学 MAC 数
 
-以前述 Arm NFRU 固定参考 CNN 为工作负载代理：1080p 颜色、480×270 网络输入，16 个卷积共 **6.3120384 GMAC/生成帧**，103,232 个卷积权重。详细逐层计算见 [Motion Engine 专题](../motion-engine/README.md#42-cnn约-6312-gmac生成帧)及其脚本。这不是 Apple 的网络，也不是 FP8 已部署模型。[^15]
+以前述 Arm NFRU 固定参考 CNN 为工作负载代理：1080p 颜色、480×270 网络输入，16 个卷积共 **6.3120384 GMAC/生成帧**，103,232 个卷积权重。详细逐层计算见 [Motion Engine 专题](../motion-engine/Motion-Engine专题：Arm光流加速、计算量与硬件取舍.md#42-cnn约-6312-gmac生成帧)及其脚本。这不是 Apple 的网络，也不是 FP8 已部署模型。[^15]
 
 保持网络拓扑不变，FP16、INT8、FP8 的数学 MAC 数相同，改变的是执行速率、误差和数据量。若按 1 MAC = 2 ops 计数，才可转换成 12.6240768 Gops；不得直接把 GMAC 写成相同数值的 GFLOPS。更不能把 SAD 绝对差计数加进来，拼成一个所谓 AI TOPS。
 
@@ -339,4 +339,4 @@ python3 gpu/motion-engine/estimate_work.py
 [^20]: NVIDIA RTXNTC-Library，2026-08-03，[InferenceCoopVec.hlsli，固定 35ec039503ef5e151c661beccc82390948dd5218](https://github.com/NVIDIA-RTX/RTXNTC-Library/blob/35ec039503ef5e151c661beccc82390948dd5218/include/libntc/shaders/InferenceCoopVec.hlsli#L215)，FP8 隐藏层、INT8 输出层和较高精度处理。
 [^21]: Hugging Face，[Diffusers / torchao 量化文档](https://huggingface.co/docs/diffusers/quantization/torchao)，查询于 2026-09-10；Supported quantization types 区分 weight-only 与动态 activation 量化。
 
-相关专题：[Motion Engine](../motion-engine/README.md) · [Arm GPU AI 演进](../arm-ai/README.md) · [Compressed Weights](../compressed-weights/README.md) · [GPU 目录](../README.md)。
+相关专题：[Motion Engine](../motion-engine/Motion-Engine专题：Arm光流加速、计算量与硬件取舍.md) · [Arm GPU AI 演进](../arm-ai/Arm移动GPU的AI与神经网络能力演进.md) · [Compressed Weights](../compressed-weights/GPU压缩权重：Arm与高通、NVIDIA、Apple对比.md) · [GPU 目录](../GPU调研目录.md)。

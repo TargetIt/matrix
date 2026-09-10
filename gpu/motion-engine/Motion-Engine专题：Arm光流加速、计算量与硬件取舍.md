@@ -326,7 +326,7 @@ python3 gpu/motion-engine/test_estimate_work.py
 | [NFRU 模型卡][hf-nfru] | Arm，查询于 2026-09-09 | 模型参数预测、最高 2×、权重/VGF/许可证 |
 | [RAFT 论文][raft-paper]、[作者代码][raft-code] | Zachary Teed、Jia Deng，2020 | 神经光流的原始研究；不代表厂商具体算法 |
 
-相关：[Arm GPU AI 历代演进](../arm-ai/README.md) · [GPU 调研目录](../README.md)。
+相关：[Arm GPU AI 历代演进](../arm-ai/Arm移动GPU的AI与神经网络能力演进.md) · [GPU 调研目录](../GPU调研目录.md)。
 
 [arm-release]: https://newsroom.arm.com/blog/arm-mali-g2-ultra-nx-ai-native-mobile-graphics
 [arm-slide]: https://newsroom.arm.com/wp-content/uploads/2026/09/Arm-Newsroom-GPU-Tech-Day-Final-slide-23-1200x675.png
