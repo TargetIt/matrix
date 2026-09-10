@@ -1,5 +1,6 @@
 # GPU 调研
 
+- [GPU Tensor FP8 专题](fp8-tensor/README.md)：A20 Pro 官方发布核实、超分插帧的精度与预算、Apple MLX / NVIDIA RTXNTC 源码，以及 FP8 与 INT8 的设计取舍；附数值与存储复算脚本。
 - [Apple AFM / ASTC 论文深读](compressed-weights/apple-afm-astc-explained.md)：从权重数值、块编码、误差传播到低秩补偿，解释为什么能压缩、何时影响答案，以及公开实现的边界。
 - [Compressed Weights 专题](compressed-weights/README.md)：Mali G2-Ultra NX 官方证据、Arm 历史硬件与 Vela 编码器、模型到运行时的数据链路，以及高通 LPBQ、NVIDIA 稀疏/LUT、Apple ANE/ASTC 对照。
 - [Motion Engine 专题](motion-engine/README.md)：Arm 发布与 NFRU 源码、SAD/MAC 计算量、可能的硬件实现，以及 NVIDIA/高通/苹果对照；附复算脚本。
